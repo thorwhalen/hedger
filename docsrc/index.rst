@@ -1,5 +1,5 @@
-Welcome to sf's documentation!
-==============================
+Welcome to hedger's documentation!
+==================================
 
 
 .. include:: ./table_of_contents.rst
