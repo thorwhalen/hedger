@@ -6,6 +6,117 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-05-07 — Public release: qbot → hedger v0.1.0
+
+The codebase moved from the private `tt/p_fin/qbot/` sandbox into its own
+public repo at `https://github.com/thorwhalen/hedger`. Module + CLI + env
+vars + state directory all renamed `qbot` → `hedger` / `QBOT` → `HEDGER` /
+`.qbot/` → `.hedger/`. No behavioural change. Version bumped to 0.1.0.
+
+---
+
+## 2026-05-06 — Research toolkit for reflection mode
+
+Adds a `hedger.research` package with thin facades over the optional
+research stack so the reflection cycle has standard tools for performance
+analysis, pair selection, and signal-quality diagnostics — without coupling
+hedger core to heavyweight libraries.
+
+### Added
+
+- **`hedger/research/`** package with four modules:
+  - `metrics.performance_summary(nav)` — Sharpe / Sortino / Calmar / Omega /
+    drawdown battery via `empyrical-reloaded`, with a pandas-only fallback
+    when empyrical isn't installed so hedger core stays callable.
+  - `metrics.compare_strategies({name: nav, ...})` — side-by-side scorecard
+    sorted by Sharpe.
+  - `cointegration.find_cointegrated_pairs(bars)` — Engle–Granger screen
+    via `statsmodels`, returning `(a, b, β)` triples ready to drop into
+    `pairs_zscore`'s `context['pairs']`.
+  - `factors.signal_ic(signals, bars)` — Spearman rank IC of scores vs
+    forward returns; the reflection cycle's first sanity check on a new
+    signal before promoting to a strategy.
+  - `factors.alphalens_clean_data(...)` — adapter into `alphalens-reloaded`
+    for full IC / quantile-spread tear sheets when wanted.
+  - `tearsheet.html_tearsheet(nav, path)` — self-contained HTML report
+    via `quantstats`.
+  - `tearsheet.pyfolio_full_tearsheet(nav)` — pyfolio panels for notebook
+    review.
+- `hedger/research/_optional.require(modname)` — single-source helper that
+  raises a precise `ImportError` pointing at `pip install -e .[research]`
+  when an optional dep is missing. Each facade goes through it.
+
+### Changed
+
+- **`pyproject.toml` `[research]` extras** now include `statsmodels`,
+  `empyrical-reloaded`, `pyfolio-reloaded`, `alphalens-reloaded`, and
+  `quantstats` alongside the existing matplotlib / plotly / seaborn /
+  scikit-learn. Install with `pip install -e .[research]`.
+
+### Tests
+
+- `tests/test_research.py` — 10 tests covering `require`, fallback &
+  empyrical paths of `performance_summary`, cointegration recovery on
+  synthetic A/B/C universes, IC sign on perfectly predictive signals,
+  and end-to-end HTML tearsheet write. All four facade modules also
+  carry doctests.
+
+### Notes
+
+- `riskfolio-lib` (HRP / ERC / Black–Litterman) and `tsfresh` (auto
+  features) are deliberately not pulled in yet — `riskfolio-lib` brings
+  cvxpy and several solvers, and tsfresh is heavy. Add them when an HRP
+  sizer or ML strategy actually lands.
+- The `pandas-ta` core dependency remains a known supply-chain concern
+  per the strategies report; replacing it with `pandas-ta-classic` or
+  TA-Lib is a separate, deliberate change.
+- Avoided per the strategies report: original Quantopian forks of pyfolio
+  / empyrical / alphalens (abandoned) and `mlfinlab` / `arbitragelab`
+  (restrictive licence).
+
+---
+
+## 2026-05-06 — Six new strategy plug-ins from the strategies report
+
+Adds the price-only / context-light strategies recommended in
+`misc/docs/Trading Strategies for the hedger Framework.md` §3.1–3.6 as
+discrete plug-in modules under `hedger/strategies/`. Each is a pure callable
+on `(bars, *, context, **kwargs)` and registers via the existing decorator,
+so the runner, backtester, and reflection sweep pick them up automatically.
+
+### Added
+
+- `donchian_breakout` (§3.1) — univariate trend / time-series momentum;
+  ATR-scaled `tanh` score on Donchian-channel breaks.
+- `bollinger_meanrev` (§3.2) — univariate contrarian; fades z-score
+  deviations beyond `n_std` from the rolling mean.
+- `xs_momentum` (§3.3) — Jegadeesh–Titman cross-sectional momentum with
+  `formation_bars` / `skip_bars` knobs and quantile cuts.
+- `pairs_zscore` (§3.4) — cointegration-based pairs trading on
+  `(sym_a, sym_b, beta)` triples injected via `context['pairs']`.
+- `pca_residual_revert` (§3.5) — Avellaneda–Lee residual stat-arb on the
+  supplied universe.
+- `pead_drift` (§3.6) — post-earnings-announcement drift; gracefully
+  no-ops when `context['earnings']` is absent (fundamentals feed not yet
+  plumbed).
+
+### Tests
+
+- `tests/test_new_strategies.py` — registry check, fire-on-shape +
+  silence-on-shape sanity per strategy, backtest-end-to-end smoke for the
+  two univariate strategies, plus parametric scope checks. Each strategy
+  also carries a doctest.
+
+### Notes
+
+- §3.7 (`news_sentiment`) and §3.8 (`llm_committee`) overlap with the
+  existing `llm_news` plug-in; deferred until a FinBERT-or-equivalent local
+  scorer is decided on, to avoid duplicating the LLM-call surface.
+- `pead_drift` is a no-op until earnings events flow through `context`.
+  Wiring an earnings feed is a follow-up under the data-pipeline skill.
+
+---
+
 ## 2026-05-06 — Launch-and-walk-away defaults + reflection cost guardrails
 
 `hedger serve` now does something useful out of the box, and the reflection

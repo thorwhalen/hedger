@@ -53,7 +53,22 @@ dev = [
     "jupyterlab",
 ]
 nautilus = ["nautilus_trader"]   # heavier; opt-in
-research = ["matplotlib", "plotly", "seaborn", "scikit-learn"]
+research = [
+    # Plotting / ML scaffolding
+    "matplotlib",
+    "plotly",
+    "seaborn",
+    "scikit-learn",
+    # Statistical tests for pair selection, cointegration, factor regressions
+    "statsmodels",
+    # Risk / performance metrics + tear sheets (Stefan Jansen's -reloaded forks)
+    # The original Quantopian forks are abandoned; do not switch back.
+    "empyrical-reloaded",
+    "pyfolio-reloaded",
+    "alphalens-reloaded",
+    # Alternative / lighter HTML tear sheet
+    "quantstats",
+]
 
 [project.urls]
 Homepage = "https://github.com/thorwhalen/hedger"

@@ -30,7 +30,7 @@ There are four extension points worth knowing by name:
 
 1. **`DataSource`** — anything that yields `Bar`s for a symbol. Three implementations ship: yfinance, Alpaca, CCXT. Add a fourth by implementing the Protocol and registering in `hedger/data/sources.py::SOURCES`.
 
-2. **`Strategy`** — anything with a `.score(bars) -> Signal` method. Strategies live in `hedger/strategies/` and self-register via the `@register` decorator. Two ship: `sma_crossover` (deterministic) and `llm_news` (Claude-based sentiment).
+2. **`Strategy`** — anything with a `.score(bars) -> Signal` method. Strategies live in `hedger/strategies/` and self-register via the `@register` decorator. Eight ship: the baselines `sma_crossover` (deterministic) and `llm_news` (Claude-based sentiment), plus six adapted from `misc/docs/Trading Strategies for the hedger Framework.md` — `donchian_breakout`, `bollinger_meanrev`, `xs_momentum`, `pairs_zscore`, `pca_residual_revert`, `pead_drift`.
 
 3. **`Broker`** — `submit(order) -> Fill`, `positions()`, `equity()`. `PaperBroker` and `AlpacaBroker` ship; `IBKRBroker` is the obvious next addition.
 
@@ -108,6 +108,12 @@ hedger/
     __init__.py        ← register() decorator + autoload
     sma_crossover.py
     llm_news.py
+    donchian_breakout.py
+    bollinger_meanrev.py
+    xs_momentum.py
+    pairs_zscore.py
+    pca_residual_revert.py
+    pead_drift.py
   execution/
     brokers.py         ← PaperBroker, AlpacaBroker
     risk.py            ← compose_middleware + caps
@@ -116,6 +122,12 @@ hedger/
     policies.py        ← NoTaxPolicy, USWashSalePolicy, CryptoLIFOPolicy
   backtest/
     engine.py          ← backtest_simple (uses PaperBroker)
+    sweep.py           ← param_sweep over backtest_simple
+  research/            ← optional, behind [research] extra
+    metrics.py         ← performance_summary, compare_strategies
+    cointegration.py   ← find_cointegrated_pairs (Engle–Granger)
+    factors.py         ← signal_ic, alphalens_clean_data
+    tearsheet.py       ← html_tearsheet (quantstats), pyfolio_full_tearsheet
   live/
     runner.py          ← Runner.tick()
     scheduler.py       ← APScheduler wrapper

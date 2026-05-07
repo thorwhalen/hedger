@@ -51,7 +51,10 @@ The install pulls in everything you need to run paper trading and the LLM-news s
 
 ```bash
 pip install -e '.[dev]'         # pytest, ruff, mypy, ipython, jupyterlab
-pip install -e '.[research]'    # matplotlib, plotly, seaborn, scikit-learn
+pip install -e '.[research]'    # matplotlib, plotly, seaborn, scikit-learn,
+                                # statsmodels, empyrical-reloaded, pyfolio-reloaded,
+                                # alphalens-reloaded, quantstats — wired through
+                                # hedger.research for the reflection cycle
 pip install -e '.[nautilus]'    # the heavier event-driven backtester
 ```
 
@@ -265,10 +268,15 @@ Add a new strategy / broker / data source / sizer / tax policy / notifier withou
 hedger/base.py            ← dataclasses + Protocols (the trading vocabulary, SSOT)
 hedger/config.py          ← TOML + env-var config
 hedger/data/              ← sources (Alpaca, yfinance, CCXT, AlpacaNews) + stores (the mall)
-hedger/strategies/        ← plugin-registered; sma_crossover and llm_news ship
+hedger/strategies/        ← plugin-registered; ships sma_crossover, llm_news,
+                            donchian_breakout, bollinger_meanrev, xs_momentum,
+                            pairs_zscore, pca_residual_revert, pead_drift
 hedger/execution/         ← brokers, risk middleware, sizers
 hedger/tax/               ← TaxPolicy plugins (none / us_wash_sale / fr_pfu / crypto_lifo)
 hedger/backtest/          ← engine + param_sweep, sharing the live code path
+hedger/research/          ← reflection-mode toolkit: performance metrics,
+                            cointegration screening, signal IC, tear sheets
+                            (optional — install via `pip install -e '.[research]'`)
 hedger/live/              ← runner.tick() + APScheduler
 hedger/reflection/        ← daily brief + Claude Code subprocess orchestrator
 hedger/notify.py          ← Notifier protocol + log/webhook/telegram impls
@@ -278,7 +286,7 @@ hedger/.claude/skills/    ← skills loaded by the nightly reflection cycle
 ## Tests
 
 ```bash
-pytest -q                                      # 104 tests, ~6 s
+pytest -q                                      # ~170 tests, ~12 s
 pytest tests/test_alpaca_integration.py -v     # only runs when ALPACA env vars set
 pytest tests/test_llm_news.py -v               # includes a live Anthropic round-trip
 ```

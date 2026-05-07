@@ -22,9 +22,13 @@ Choose **one** of these classes of change. Order roughly by safety:
 
 1. **Tighten an observation.** Add a new metric or log to a strategy whose
    behaviour was confusing today. No behaviour change.
-2. **Tune a parameter.** Sweep `fast`/`slow` for sma_crossover, threshold
-   for llm_news, etc. Keep the baseline; only commit a swap if the new
-   parameters beat the old by a clear margin on the same window.
+2. **Tune a parameter.** Sweep the kwargs of any registered strategy
+   (e.g. `fast`/`slow` on sma_crossover or donchian_breakout, `window`/
+   `n_std` on bollinger_meanrev, `formation_bars`/`skip_bars` on
+   xs_momentum, `lookback`/`entry_z` on pairs_zscore or
+   pca_residual_revert, threshold on llm_news). Keep the baseline; only
+   commit a swap if the new parameters beat the old by a clear margin on
+   the same window.
 3. **Add a strategy.** Drop a new file in `hedger/strategies/`, register it,
    write a doctest, write at least one pytest. Do **not** enable it in
    `config.toml` — that's the owner's call.
@@ -53,6 +57,35 @@ Run, in order:
    compare. Only commit if Sharpe and max_drawdown both improve, or if
    one improves and the other is within 5%.
 4. Check that no risk middleware was bypassed: `grep -n risk_budget hedger/`.
+
+### Research toolkit (use during validation, not in production code)
+
+`hedger.research` (behind the `[research]` extra) wraps statsmodels,
+empyrical-reloaded, pyfolio-reloaded, alphalens-reloaded, and quantstats
+for reflection-time analysis. Each call gracefully raises an ImportError
+with an install hint when the underlying lib is missing. Useful entry
+points:
+
+- `from hedger.research import performance_summary` —
+  Sharpe / Sortino / Calmar / Omega / drawdown on a NAV series. Use this
+  in the CHANGELOG metrics block instead of the hand-computed Sharpe
+  from `BacktestResult.summary()` whenever you can.
+- `from hedger.research.metrics import compare_strategies` — side-by-side
+  scorecard sorted by Sharpe; the right shape for "before vs after"
+  evidence in the CHANGELOG.
+- `from hedger.research import signal_ic` — Spearman-rank IC of scores vs
+  forward returns. Use *before* a parameter sweep to check that the
+  underlying signal even has predictive power.
+- `from hedger.research import find_cointegrated_pairs` — Engle–Granger
+  pair screening; output is shaped for `pairs_zscore`'s
+  `context['pairs']`.
+- `from hedger.research import html_tearsheet` — single self-contained
+  HTML report; persist under `logs/tearsheets/` and link from the
+  CHANGELOG entry when a strategy ships.
+
+Do **not** import `hedger.research` from inside a strategy or from the
+runner — these tools are for analysis, not production decisions. Strategies
+must stay pure and dependency-light.
 
 ## Phase 5 — Record (15 min budget)
 
