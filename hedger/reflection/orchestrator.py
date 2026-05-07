@@ -84,16 +84,14 @@ REFLECT_PROMPT = textwrap.dedent("""
 
 
 def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=cwd, check=True,
-                          capture_output=True, text=True)
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
 def snapshot(repo: Path, label: str) -> str:
     """Tag the current state so we can roll back. Returns the tag name."""
     try:
         _git(["add", "-A"], repo)
-        _git(["commit", "-m", f"snapshot before reflection {label}",
-              "--allow-empty"], repo)
+        _git(["commit", "-m", f"snapshot before reflection {label}", "--allow-empty"], repo)
     except subprocess.CalledProcessError:
         pass  # nothing to commit
     tag = f"reflect-{label}"
@@ -108,10 +106,14 @@ def rollback(repo: Path, tag: str) -> None:
 def _validation_passed(repo: Path) -> bool:
     """Run pytest and reject if anything failed."""
     p = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q"], cwd=repo, capture_output=True, text=True,
+        [sys.executable, "-m", "pytest", "-q"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
     )
-    log.info("post_reflect_pytest", returncode=p.returncode,
-             tail=p.stdout[-2000:] if p.stdout else "")
+    log.info(
+        "post_reflect_pytest", returncode=p.returncode, tail=p.stdout[-2000:] if p.stdout else ""
+    )
     return p.returncode == 0
 
 
@@ -139,11 +141,18 @@ def reflect(
     log.info("reflection_start", repo=str(repo), tag=tag, brief=str(brief_path))
 
     prompt = REFLECT_PROMPT.format(
-        brief_path=str(brief_path), max_minutes=cfg.reflection.max_minutes,
+        brief_path=str(brief_path),
+        max_minutes=cfg.reflection.max_minutes,
     )
-    cmd = [cfg.reflection.claude_code_cmd, "-p", prompt,
-           "--allowed-tools", "edit,bash",
-           "--output-format", "json"]
+    cmd = [
+        cfg.reflection.claude_code_cmd,
+        "-p",
+        prompt,
+        "--allowed-tools",
+        "edit,bash",
+        "--output-format",
+        "json",
+    ]
     if cfg.reflection.max_turns is not None:
         cmd.extend(["--max-turns", str(cfg.reflection.max_turns)])
     if dry_run:
@@ -152,12 +161,18 @@ def reflect(
 
     try:
         proc = subprocess.run(
-            cmd, cwd=repo, capture_output=True, text=True,
+            cmd,
+            cwd=repo,
+            capture_output=True,
+            text=True,
             timeout=cfg.reflection.max_minutes * 60,
         )
-        log.info("claude_code_done", returncode=proc.returncode,
-                 tail_stdout=proc.stdout[-2000:] if proc.stdout else "",
-                 tail_stderr=proc.stderr[-1000:] if proc.stderr else "")
+        log.info(
+            "claude_code_done",
+            returncode=proc.returncode,
+            tail_stdout=proc.stdout[-2000:] if proc.stdout else "",
+            tail_stderr=proc.stderr[-1000:] if proc.stderr else "",
+        )
     except subprocess.TimeoutExpired:
         log.warning("claude_code_timeout")
         rollback(repo, tag)
@@ -176,24 +191,28 @@ def reflect(
     # (complexity, schema brittleness, single-turn overshoot unavoidable)
     # and the triggers under which this work becomes worth doing.
     cost_usd = _extract_cost_usd(proc.stdout)
-    cost_over = (cfg.reflection.max_usd is not None
-                 and cost_usd is not None
-                 and cost_usd > cfg.reflection.max_usd)
+    cost_over = (
+        cfg.reflection.max_usd is not None
+        and cost_usd is not None
+        and cost_usd > cfg.reflection.max_usd
+    )
     if cost_over:
-        log.warning("reflection_cost_over_cap",
-                    cost_usd=cost_usd, max_usd=cfg.reflection.max_usd)
+        log.warning("reflection_cost_over_cap", cost_usd=cost_usd, max_usd=cfg.reflection.max_usd)
         notifier.notify(
             "warning",
-            f"reflection cost ${cost_usd:.2f} exceeded cap "
-            f"${cfg.reflection.max_usd:.2f}",
-            tag=tag, cost_usd=cost_usd, max_usd=cfg.reflection.max_usd,
+            f"reflection cost ${cost_usd:.2f} exceeded cap ${cfg.reflection.max_usd:.2f}",
+            tag=tag,
+            cost_usd=cost_usd,
+            max_usd=cfg.reflection.max_usd,
         )
 
     if not _validation_passed(repo):
         log.warning("validation_failed_rolling_back")
         rollback(repo, tag)
         notifier.notify(
-            "warning", "reflection rolled back: pytest failed", tag=tag,
+            "warning",
+            "reflection rolled back: pytest failed",
+            tag=tag,
         )
         return {"status": "rolled_back", "tag": tag, "cost_usd": cost_usd}
 

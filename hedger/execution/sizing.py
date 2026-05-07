@@ -42,7 +42,7 @@ def kelly_capped_sizer(
     *,
     positions: Mapping[Symbol, Position],
     nav: float,
-    fraction: float = 0.25,    # fractional Kelly — full Kelly is famously brutal
+    fraction: float = 0.25,  # fractional Kelly — full Kelly is famously brutal
     max_weight: float = 0.10,
 ) -> Iterable[Decision]:
     """Treat |score| as edge; allocate fractional-Kelly weight, capped.

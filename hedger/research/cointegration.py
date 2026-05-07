@@ -29,6 +29,7 @@ from hedger.research._optional import require
 @dataclass(frozen=True, slots=True)
 class CointegrationResult:
     """Result of an Engle–Granger test on one ordered pair."""
+
     a: Symbol
     b: Symbol
     beta: float
@@ -90,8 +91,14 @@ def find_cointegrated_pairs(
                 continue
             X = sm.add_constant(xb)
             beta_hat = float(sm.OLS(xa, X).fit().params[1])
-            out.append(CointegrationResult(
-                a=a, b=b, beta=beta_hat, pvalue=float(pvalue), n_observations=n,
-            ))
+            out.append(
+                CointegrationResult(
+                    a=a,
+                    b=b,
+                    beta=beta_hat,
+                    pvalue=float(pvalue),
+                    n_observations=n,
+                )
+            )
     out.sort(key=lambda r: r.pvalue)
     return out

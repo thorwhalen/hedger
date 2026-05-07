@@ -29,6 +29,7 @@ from hedger.strategies import register
 def _default_score_fn(prompt: str, *, model: str = "claude-haiku-4-5-20251001") -> str:
     """Call Claude via the Anthropic SDK. Return raw text content."""
     from anthropic import Anthropic
+
     client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     msg = client.messages.create(
         model=model,
@@ -62,9 +63,9 @@ def llm_news(
     `context['news']` should be a {symbol_str: list[str]} mapping. If empty
     for a symbol, we skip it (no opinion is the right opinion).
     """
-    score_fn = score_fn or (lambda p, m=model: _cached_score(
-        hashlib.sha256(p.encode()).hexdigest(), p, m
-    ))
+    score_fn = score_fn or (
+        lambda p, m=model: _cached_score(hashlib.sha256(p.encode()).hexdigest(), p, m)
+    )
     news = (context or {}).get("news", {})
     items = []
     for symbol, bar_iter in bars.items():
@@ -72,17 +73,18 @@ def llm_news(
         headlines = list(news.get(str(symbol), []))[:8]
         if not headlines:
             continue
-        items.append({
-            "symbol": str(symbol),
-            "recent_closes": [b.close for b in bar_list],
-            "headlines": headlines,
-        })
+        items.append(
+            {
+                "symbol": str(symbol),
+                "recent_closes": [b.close for b in bar_list],
+                "headlines": headlines,
+            }
+        )
     if not items:
         return
     prompt = (
         "For each symbol below, output a directional score in [-1, 1] for "
-        "the next bar, with a one-sentence rationale.\n\n"
-        + json.dumps(items, indent=2)
+        "the next bar, with a one-sentence rationale.\n\n" + json.dumps(items, indent=2)
     )
     text = score_fn(prompt)
     try:

@@ -27,8 +27,10 @@ from hedger.research._optional import require
 
 
 def _signals_to_frame(signals: Iterable[Signal]) -> pd.DataFrame:
-    rows = [{"date": s.ts, "symbol": str(s.symbol), "score": float(s.score),
-             "strategy": s.strategy} for s in signals]
+    rows = [
+        {"date": s.ts, "symbol": str(s.symbol), "score": float(s.score), "strategy": s.strategy}
+        for s in signals
+    ]
     if not rows:
         return pd.DataFrame(columns=["date", "symbol", "score", "strategy"])
     df = pd.DataFrame(rows)
@@ -78,28 +80,47 @@ def signal_ic(
     sf = _signals_to_frame(signals)
     pf = _closes_to_frame(bars)
     if sf.empty or pf.empty:
-        return {"mean_ic": float("nan"), "ic_std": float("nan"),
-                "ic_t_stat": float("nan"), "n_observations": 0}
+        return {
+            "mean_ic": float("nan"),
+            "ic_std": float("nan"),
+            "ic_t_stat": float("nan"),
+            "n_observations": 0,
+        }
     fwd = pf.pct_change(horizon_bars).shift(-horizon_bars)
     fwd_long = fwd.stack().rename("forward_return").reset_index()
     fwd_long.columns = ["date", "symbol", "forward_return"]
     merged = sf.merge(fwd_long, on=["date", "symbol"], how="inner").dropna(
-        subset=["score", "forward_return"])
+        subset=["score", "forward_return"]
+    )
     if merged.empty:
-        return {"mean_ic": float("nan"), "ic_std": float("nan"),
-                "ic_t_stat": float("nan"), "n_observations": 0}
-    ics = merged.groupby("date").apply(
-        lambda g: g["score"].corr(g["forward_return"], method="spearman")
-        if g["symbol"].nunique() > 1 else np.nan,
-        include_groups=False,
-    ).dropna()
+        return {
+            "mean_ic": float("nan"),
+            "ic_std": float("nan"),
+            "ic_t_stat": float("nan"),
+            "n_observations": 0,
+        }
+    ics = (
+        merged.groupby("date")
+        .apply(
+            lambda g: (
+                g["score"].corr(g["forward_return"], method="spearman")
+                if g["symbol"].nunique() > 1
+                else np.nan
+            ),
+            include_groups=False,
+        )
+        .dropna()
+    )
     if ics.empty:
-        return {"mean_ic": float("nan"), "ic_std": float("nan"),
-                "ic_t_stat": float("nan"), "n_observations": 0}
+        return {
+            "mean_ic": float("nan"),
+            "ic_std": float("nan"),
+            "ic_t_stat": float("nan"),
+            "n_observations": 0,
+        }
     mean_ic = float(ics.mean())
     ic_std = float(ics.std(ddof=1)) if len(ics) > 1 else float("nan")
-    t_stat = (mean_ic / (ic_std / np.sqrt(len(ics)))
-              if ic_std and ic_std > 0 else float("nan"))
+    t_stat = mean_ic / (ic_std / np.sqrt(len(ics))) if ic_std and ic_std > 0 else float("nan")
     return {
         "mean_ic": mean_ic,
         "ic_std": float(ic_std),
@@ -128,5 +149,8 @@ def alphalens_clean_data(
     factor = sf.set_index(["date", "symbol"])["score"]
     prices = _closes_to_frame(bars)
     return al.get_clean_factor_and_forward_returns(
-        factor=factor, prices=prices, quantiles=quantiles, periods=periods,
+        factor=factor,
+        prices=prices,
+        quantiles=quantiles,
+        periods=periods,
     )

@@ -25,15 +25,17 @@ class BrokerConfig:
     Default is ``alpaca:paper`` — the recommended starting target. Use ``paper``
     (no colon) for the in-memory broker (backtesting / offline development).
     """
-    name: str = "alpaca:paper"     # 'paper' | 'alpaca:paper' | 'alpaca:live' | 'ccxt:binance'
+
+    name: str = "alpaca:paper"  # 'paper' | 'alpaca:paper' | 'alpaca:live' | 'ccxt:binance'
     paper: bool = True
-    base_url: str | None = None    # e.g. https://paper-api.alpaca.markets
+    base_url: str | None = None  # e.g. https://paper-api.alpaca.markets
 
 
 @dataclass(frozen=True, slots=True)
 class DataConfig:
     """Where bars come from and where they're cached."""
-    primary: str = "alpaca"         # 'alpaca' | 'ccxt:kraken' | 'yfinance'
+
+    primary: str = "alpaca"  # 'alpaca' | 'ccxt:kraken' | 'yfinance'
     cache_dir: str = ".hedger/cache"
     timeframe: str = "1h"
 
@@ -59,29 +61,31 @@ class ReflectionConfig:
     drop 5-10x). A typical reflection session reading the brief, editing
     one file, and running tests lands around $1-3.
     """
+
     enabled: bool = False
-    cron: str = "0 22 * * *"         # 22:00 every day in local TZ
-    timezone: str = "Europe/Paris"   # CET/CEST
-    max_minutes: int = 480           # 8h wall-clock budget
-    max_turns: int | None = 50       # pre-emptive coarse cap (turns ~= model calls)
-    max_usd: float | None = 5.0      # post-hoc soft cap on session cost
+    cron: str = "0 22 * * *"  # 22:00 every day in local TZ
+    timezone: str = "Europe/Paris"  # CET/CEST
+    max_minutes: int = 480  # 8h wall-clock budget
+    max_turns: int | None = 50  # pre-emptive coarse cap (turns ~= model calls)
+    max_usd: float | None = 5.0  # post-hoc soft cap on session cost
     claude_code_cmd: str = "claude"  # path to the claude-code binary
     skills_dir: str = ".claude/skills"
 
 
 @dataclass(frozen=True, slots=True)
 class RiskConfig:
-    max_gross_exposure: float = 1.0      # 100% of NAV
-    max_position_weight: float = 0.10    # no single position > 10% NAV
-    max_daily_loss: float = 0.02         # circuit-breaker at -2% intraday
+    max_gross_exposure: float = 1.0  # 100% of NAV
+    max_position_weight: float = 0.10  # no single position > 10% NAV
+    max_daily_loss: float = 0.02  # circuit-breaker at -2% intraday
     max_open_orders: int = 50
 
 
 @dataclass(frozen=True, slots=True)
 class NotifyConfig:
     """Where to send out-of-band alerts (vetoes, drawdown, rolled-back reflection)."""
-    kind: str = "log"                   # 'log' | 'webhook[:URL]' | 'telegram' | 'multi:...'
-    drawdown_alert_pct: float = 0.01    # notify on >= 1% intraday loss
+
+    kind: str = "log"  # 'log' | 'webhook[:URL]' | 'telegram' | 'multi:...'
+    drawdown_alert_pct: float = 0.01  # notify on >= 1% intraday loss
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +93,7 @@ class Config:
     universe: tuple[str, ...] = ("SPY", "QQQ", "BTC/USD")
     timeframe: str = "1h"
     base_currency: str = "USD"
-    tax_policy: str = "none"           # 'none' | 'us_wash_sale' | 'fr_pfu' | 'crypto_lifo'
+    tax_policy: str = "none"  # 'none' | 'us_wash_sale' | 'fr_pfu' | 'crypto_lifo'
     broker: BrokerConfig = field(default_factory=BrokerConfig)
     data: DataConfig = field(default_factory=DataConfig)
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
@@ -112,6 +116,7 @@ def _check_no_secrets_in_toml(d: dict[str, Any], _path: str = "") -> None:
     Secrets must come from the envfile (`hedger install`), never config.toml.
     """
     from hedger.install import is_secret_key_name
+
     for k, v in d.items():
         full = f"{_path}.{k}" if _path else k
         if is_secret_key_name(k):
@@ -136,7 +141,12 @@ def _coerce(d: dict[str, Any], cls):
             continue
         ft = fields[k].type
         # nested dataclass identified by class object on the field
-        default = fields[k].default_factory() if callable(getattr(fields[k], "default_factory", None)) and fields[k].default_factory is not field else fields[k].default
+        default = (
+            fields[k].default_factory()
+            if callable(getattr(fields[k], "default_factory", None))
+            and fields[k].default_factory is not field
+            else fields[k].default
+        )
         if hasattr(default, "__dataclass_fields__") and isinstance(v, dict):
             kwargs[k] = _coerce(v, type(default))
         else:
@@ -163,5 +173,12 @@ def load_config(path: str | Path | None = None) -> Config:
     return _coerce(data, Config)
 
 
-__all__ = ["Config", "BrokerConfig", "DataConfig", "ReflectionConfig",
-           "RiskConfig", "NotifyConfig", "load_config"]
+__all__ = [
+    "Config",
+    "BrokerConfig",
+    "DataConfig",
+    "ReflectionConfig",
+    "RiskConfig",
+    "NotifyConfig",
+    "load_config",
+]

@@ -40,8 +40,10 @@ def html_tearsheet(
     returns = _to_returns(nav)
     bench_returns = _to_returns(benchmark) if benchmark is not None else None
     qs.reports.html(
-        returns=returns, benchmark=bench_returns,
-        title=title, output=str(out),
+        returns=returns,
+        benchmark=bench_returns,
+        title=title,
+        output=str(out),
     )
     return out
 

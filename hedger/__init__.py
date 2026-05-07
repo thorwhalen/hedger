@@ -42,16 +42,32 @@ from hedger.util import check_requirements, get_logger
 
 __all__ = [
     # types
-    "AssetClass", "Bar", "Decision", "Fill", "Order", "Position", "Side",
-    "Signal", "Symbol",
+    "AssetClass",
+    "Bar",
+    "Decision",
+    "Fill",
+    "Order",
+    "Position",
+    "Side",
+    "Signal",
+    "Symbol",
     # config + storage
-    "Config", "load_config", "mall",
+    "Config",
+    "load_config",
+    "mall",
     # entry points
-    "make_runner", "run_scheduler", "backtest_simple", "BacktestResult",
+    "make_runner",
+    "run_scheduler",
+    "backtest_simple",
+    "BacktestResult",
     "reflect",
     # extension
-    "available_strategies", "register_strategy",
-    "default_risk_middleware", "equal_weight_sizer", "kelly_capped_sizer",
+    "available_strategies",
+    "register_strategy",
+    "default_risk_middleware",
+    "equal_weight_sizer",
+    "kelly_capped_sizer",
     # ux
-    "check_requirements", "get_logger",
+    "check_requirements",
+    "get_logger",
 ]

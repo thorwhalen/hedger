@@ -73,7 +73,7 @@ def daily_brief(mall: Mapping, *, day: datetime | None = None) -> dict:
 
     signals = [v for v in _safe_values(mall, "signals") if _in_window(v.get("ts"), start, end)]
     decisions = [v for v in _safe_values(mall, "decisions") if _in_window(v.get("ts"), start, end)]
-    orders = [v for v in _safe_values(mall, "orders")]   # orders may not have a top-level ts
+    orders = [v for v in _safe_values(mall, "orders")]  # orders may not have a top-level ts
     fills = [v for v in _safe_values(mall, "fills") if _in_window(v.get("ts"), start, end)]
     news = [v for v in _safe_values(mall, "news") if _in_window(v.get("created_at"), start, end)]
 
@@ -113,9 +113,7 @@ def daily_brief(mall: Mapping, *, day: datetime | None = None) -> dict:
     # exposes a different broker id from our client_order_id; stale-fill
     # detection here is a heuristic, not a guarantee).
     fill_order_ids: set[str] = {f["order_id"] for f in fills}
-    fill_symbols_recent: set[tuple[str, str]] = {
-        (f["symbol"], f["side"]) for f in fills
-    }
+    fill_symbols_recent: set[tuple[str, str]] = {(f["symbol"], f["side"]) for f in fills}
     unfilled: list[dict] = []
     for ord_dict in orders:
         # Orders are keyed by (run_id, client_order_id); the value is the
@@ -123,16 +121,19 @@ def daily_brief(mall: Mapping, *, day: datetime | None = None) -> dict:
         # (a) the order's client_order_id is in our window (best-effort), and
         # (b) we have no fill for the same symbol+side within the window.
         if (ord_dict["symbol"], ord_dict["side"]) not in fill_symbols_recent:
-            unfilled.append({
-                "symbol": ord_dict["symbol"],
-                "side": ord_dict["side"],
-                "qty": ord_dict.get("qty"),
-                "client_order_id": ord_dict.get("client_order_id"),
-            })
+            unfilled.append(
+                {
+                    "symbol": ord_dict["symbol"],
+                    "side": ord_dict["side"],
+                    "qty": ord_dict.get("qty"),
+                    "client_order_id": ord_dict.get("client_order_id"),
+                }
+            )
 
     # Recent reconciliation drift events (from mall["drifts"]).
     position_drifts: list[dict] = [
-        v for v in _safe_values(mall, "drifts")
+        v
+        for v in _safe_values(mall, "drifts")
         if isinstance(v, dict) and _in_window(v.get("ts"), start, end)
     ]
     latest_snapshot = _latest_positions_snapshot(mall)
@@ -156,16 +157,18 @@ def daily_brief(mall: Mapping, *, day: datetime | None = None) -> dict:
         "fills_sample": fills[:20],
         "decisions_sample": decisions[:20],
         "recent_news": [
-            {"headline": n.get("headline", ""), "symbols": n.get("symbols", []),
-             "created_at": n.get("created_at")}
+            {
+                "headline": n.get("headline", ""),
+                "symbols": n.get("symbols", []),
+                "created_at": n.get("created_at"),
+            }
             for n in news[:20]
         ],
     }
 
 
 def _empty_symbol_stats() -> dict:
-    return {"signals": 0, "fills": 0, "buy_qty": 0.0,
-            "sell_qty": 0.0, "notional_traded": 0.0}
+    return {"signals": 0, "fills": 0, "buy_qty": 0.0, "sell_qty": 0.0, "notional_traded": 0.0}
 
 
 def _latest_positions_snapshot(mall: Mapping) -> dict | None:

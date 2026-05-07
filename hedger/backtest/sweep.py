@@ -74,14 +74,18 @@ def param_sweep(
         # but inject anyway for tracebacks/log lines.
         try:
             strat_partial.__name__ = (  # type: ignore[attr-defined]
-                getattr(strategy, "__name__", "strategy") + "?" +
-                ",".join(f"{k}={v}" for k, v in combo.items())
+                getattr(strategy, "__name__", "strategy")
+                + "?"
+                + ",".join(f"{k}={v}" for k, v in combo.items())
             )
         except (AttributeError, TypeError):
             pass
         res = backtest_simple(
-            strat_partial, bars, sizer=sizer,
-            starting_cash=starting_cash, fee_bps=fee_bps,
+            strat_partial,
+            bars,
+            sizer=sizer,
+            starting_cash=starting_cash,
+            fee_bps=fee_bps,
             slippage_bps=slippage_bps,
         )
         return {**combo, **res.summary()}

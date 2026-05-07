@@ -31,10 +31,19 @@ def _to_returns(nav: pd.Series) -> pd.Series:
 def _fallback_summary(returns: pd.Series, periods_per_year: int) -> dict[str, float]:
     """Stdlib/pandas fallback when empyrical isn't installed."""
     if returns.empty:
-        out = {k: float("nan") for k in (
-            "annual_return", "annual_volatility", "sharpe", "sortino",
-            "calmar", "max_drawdown", "skew", "kurtosis",
-        )}
+        out = {
+            k: float("nan")
+            for k in (
+                "annual_return",
+                "annual_volatility",
+                "sharpe",
+                "sortino",
+                "calmar",
+                "max_drawdown",
+                "skew",
+                "kurtosis",
+            )
+        }
         out["n_observations"] = 0
         return out
     mean = float(returns.mean())
@@ -46,8 +55,11 @@ def _fallback_summary(returns: pd.Series, periods_per_year: int) -> dict[str, fl
     nav = (1 + returns).cumprod()
     dd = float((nav / nav.cummax() - 1).min())
     sharpe = ann_ret / ann_vol if ann_vol > 0 else float("nan")
-    sortino = (ann_ret / (downside_std * np.sqrt(periods_per_year))
-               if downside_std and downside_std > 0 else float("nan"))
+    sortino = (
+        ann_ret / (downside_std * np.sqrt(periods_per_year))
+        if downside_std and downside_std > 0
+        else float("nan")
+    )
     calmar = ann_ret / abs(dd) if dd < 0 else float("nan")
     return {
         "annual_return": float(ann_ret),
@@ -89,6 +101,7 @@ def performance_summary(
         return _fallback_summary(returns, periods_per_year)
     try:
         from hedger.research._optional import require
+
         emp = require("empyrical")
     except ImportError:
         if use_empyrical is True:
@@ -97,16 +110,17 @@ def performance_summary(
     if returns.empty:
         return _fallback_summary(returns, periods_per_year)
     return {
-        "annual_return": float(emp.annual_return(returns, period="daily",
-                                                  annualization=periods_per_year)),
-        "annual_volatility": float(emp.annual_volatility(returns, period="daily",
-                                                         annualization=periods_per_year)),
-        "sharpe": float(emp.sharpe_ratio(returns, period="daily",
-                                          annualization=periods_per_year)),
-        "sortino": float(emp.sortino_ratio(returns, period="daily",
-                                            annualization=periods_per_year)),
-        "calmar": float(emp.calmar_ratio(returns, period="daily",
-                                          annualization=periods_per_year)),
+        "annual_return": float(
+            emp.annual_return(returns, period="daily", annualization=periods_per_year)
+        ),
+        "annual_volatility": float(
+            emp.annual_volatility(returns, period="daily", annualization=periods_per_year)
+        ),
+        "sharpe": float(emp.sharpe_ratio(returns, period="daily", annualization=periods_per_year)),
+        "sortino": float(
+            emp.sortino_ratio(returns, period="daily", annualization=periods_per_year)
+        ),
+        "calmar": float(emp.calmar_ratio(returns, period="daily", annualization=periods_per_year)),
         "max_drawdown": float(emp.max_drawdown(returns)),
         "omega": float(emp.omega_ratio(returns)),
         "tail_ratio": float(emp.tail_ratio(returns)),
@@ -131,8 +145,10 @@ def compare_strategies(
     >>> list(df.columns)
     ['a', 'b']
     """
-    rows = {name: performance_summary(nav, periods_per_year=periods_per_year)
-            for name, nav in navs.items()}
+    rows = {
+        name: performance_summary(nav, periods_per_year=periods_per_year)
+        for name, nav in navs.items()
+    }
     df = pd.DataFrame(rows)
     if "sharpe" in df.index:
         df = df[df.loc["sharpe"].sort_values(ascending=False).index]

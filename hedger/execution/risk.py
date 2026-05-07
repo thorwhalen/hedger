@@ -36,22 +36,26 @@ def compose_middleware(
             if d is None:
                 return None
         return d
+
     return chain
 
 
 def cap_position_weight(max_weight: float) -> Callable[[Decision], Decision | None]:
     """Clip target weight in absolute value."""
+
     def mw(d: Decision) -> Decision | None:
         if abs(d.target_weight) > max_weight:
-            log.info("clip", symbol=str(d.symbol),
-                     orig=d.target_weight, capped=max_weight)
+            log.info("clip", symbol=str(d.symbol), orig=d.target_weight, capped=max_weight)
             return Decision(
-                symbol=d.symbol, ts=d.ts,
+                symbol=d.symbol,
+                ts=d.ts,
                 target_weight=max_weight if d.target_weight > 0 else -max_weight,
                 rationale=d.rationale + f" [capped to {max_weight}]",
-                risk_budget=d.risk_budget, meta=d.meta,
+                risk_budget=d.risk_budget,
+                meta=d.meta,
             )
         return d
+
     return mw
 
 
@@ -62,6 +66,7 @@ def block_when_loss_exceeds(
     nav_now: Callable[[], float],
 ) -> Callable[[Decision], Decision | None]:
     """Veto all decisions if today's drawdown > max_daily_loss."""
+
     def mw(d: Decision) -> Decision | None:
         opened = nav_today_open()
         if opened <= 0:
@@ -71,6 +76,7 @@ def block_when_loss_exceeds(
             log.warning("circuit_breaker", loss=loss, threshold=max_daily_loss)
             return None
         return d
+
     return mw
 
 
@@ -80,6 +86,7 @@ def cap_gross_exposure(
     other_targets: Callable[[Symbol], Mapping[Symbol, float]],
 ) -> Callable[[Decision], Decision | None]:
     """Veto if the new decision would push gross |weights| sum past max_gross."""
+
     def mw(d: Decision) -> Decision | None:
         others = other_targets(d.symbol)
         gross = sum(abs(w) for s, w in others.items() if s != d.symbol)
@@ -87,6 +94,7 @@ def cap_gross_exposure(
             log.info("gross_exposure_block", proposed=d.target_weight, gross=gross)
             return None
         return d
+
     return mw
 
 
@@ -101,12 +109,15 @@ def default_risk_middleware(
 
     Order matters: cap weights first (cheap), then gross, then circuit-breaker.
     """
-    return compose_middleware([
-        cap_position_weight(cfg.max_position_weight),
-        cap_gross_exposure(cfg.max_gross_exposure, other_targets=other_targets),
-        block_when_loss_exceeds(cfg.max_daily_loss,
-                                nav_today_open=nav_today_open, nav_now=nav_now),
-    ])
+    return compose_middleware(
+        [
+            cap_position_weight(cfg.max_position_weight),
+            cap_gross_exposure(cfg.max_gross_exposure, other_targets=other_targets),
+            block_when_loss_exceeds(
+                cfg.max_daily_loss, nav_today_open=nav_today_open, nav_now=nav_now
+            ),
+        ]
+    )
 
 
 __all__ = [

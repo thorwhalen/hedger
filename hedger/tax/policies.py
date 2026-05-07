@@ -29,6 +29,7 @@ from hedger.base import Decision, Fill, Position, Side, Symbol, TaxPolicy, utc_n
 # none
 # ---------------------------------------------------------------------------
 
+
 class NoTaxPolicy:
     name = "none"
 
@@ -40,6 +41,7 @@ class NoTaxPolicy:
 # US wash sale veto
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class USWashSalePolicy:
     """Block a sell that closes a position at a loss if a buy occurred within
@@ -49,6 +51,7 @@ class USWashSalePolicy:
     accounts and substantially-identical securities is substantially more
     complex; do not rely on this for tax filing.
     """
+
     name: str = "us_wash_sale"
     window_days: int = 31
 
@@ -82,6 +85,7 @@ class USWashSalePolicy:
 # Crypto LIFO ledger (bookkeeping only)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CryptoLIFOPolicy:
     """Maintain a LIFO lot ledger per symbol; never veto; expose `realized()`.
@@ -89,6 +93,7 @@ class CryptoLIFOPolicy:
     Many EU regimes default to FIFO for crypto; LIFO is an option in some
     (e.g. you can elect specific-lot in the US). Adapt to your jurisdiction.
     """
+
     name: str = "crypto_lifo"
     lots: dict[Symbol, list[tuple[float, float]]] = field(default_factory=dict)
     _realized: dict[Symbol, float] = field(default_factory=lambda: defaultdict(float))
@@ -122,6 +127,7 @@ class CryptoLIFOPolicy:
 # France — Prélèvement Forfaitaire Unique (PFU)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FrenchPFUPolicy:
     """France's *Prélèvement Forfaitaire Unique* (a.k.a. Flat Tax) at 30 %.
@@ -149,6 +155,7 @@ class FrenchPFUPolicy:
     >>> round(p.tax_owed(sym), 2)
     30.0
     """
+
     name: str = "fr_pfu"
     rate: float = 0.30
     lots: dict[Symbol, list[tuple[float, float]]] = field(default_factory=dict)

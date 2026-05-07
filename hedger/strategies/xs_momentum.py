@@ -68,13 +68,27 @@ def xs_momentum(
     winners = dict(ranked[-n_top:])
     for sym, r in winners.items():
         yield Signal(
-            symbol=sym, ts=last_ts, score=1.0, strategy="xs_momentum",
-            meta={"ret_form": float(r), "side": "winner",
-                  "formation_bars": formation_bars, "skip_bars": skip_bars},
+            symbol=sym,
+            ts=last_ts,
+            score=1.0,
+            strategy="xs_momentum",
+            meta={
+                "ret_form": float(r),
+                "side": "winner",
+                "formation_bars": formation_bars,
+                "skip_bars": skip_bars,
+            },
         )
     for sym, r in losers.items():
         yield Signal(
-            symbol=sym, ts=last_ts, score=-1.0, strategy="xs_momentum",
-            meta={"ret_form": float(r), "side": "loser",
-                  "formation_bars": formation_bars, "skip_bars": skip_bars},
+            symbol=sym,
+            ts=last_ts,
+            score=-1.0,
+            strategy="xs_momentum",
+            meta={
+                "ret_form": float(r),
+                "side": "loser",
+                "formation_bars": formation_bars,
+                "skip_bars": skip_bars,
+            },
         )

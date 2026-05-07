@@ -26,8 +26,7 @@ def check_requirements(*, broker: str = "alpaca", llm: bool = True) -> dict[str,
 
     if llm and not os.environ.get("ANTHROPIC_API_KEY"):
         missing["ANTHROPIC_API_KEY"] = (
-            "Get a key at https://console.anthropic.com/ and "
-            "`export ANTHROPIC_API_KEY=...`."
+            "Get a key at https://console.anthropic.com/ and `export ANTHROPIC_API_KEY=...`."
         )
 
     if broker.startswith("alpaca"):
@@ -49,6 +48,7 @@ def check_requirements(*, broker: str = "alpaca", llm: bool = True) -> dict[str,
             paper = ":live" not in broker
             try:
                 from alpaca.trading.client import TradingClient
+
                 acc = TradingClient(key, sec, paper=paper).get_account()
                 if str(getattr(acc, "status", "")).lower().endswith("active") is False:
                     missing["alpaca_account_status"] = (
@@ -86,12 +86,11 @@ def configure_logging(level: str = "INFO") -> None:
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             structlog.processors.StackInfoRenderer(),
-            structlog.dev.ConsoleRenderer() if sys.stderr.isatty()
+            structlog.dev.ConsoleRenderer()
+            if sys.stderr.isatty()
             else structlog.processors.JSONRenderer(),
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(
-            getattr(__import__("logging"), level)
-        ),
+        wrapper_class=structlog.make_filtering_bound_logger(getattr(__import__("logging"), level)),
         cache_logger_on_first_use=True,
     )
 

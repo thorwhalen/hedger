@@ -36,6 +36,7 @@ from hedger.base import (
 # Generic JSON-line store (works for anything dataclass-shaped)
 # ---------------------------------------------------------------------------
 
+
 class JsonlStore(MutableMapping):
     """A keyed JSON-lines store on disk. Cheap, inspectable with `head`/`jq`.
 
@@ -79,8 +80,11 @@ class JsonlStore(MutableMapping):
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         with tmp.open("w") as f:
             for k, v in cache.items():
-                f.write(json.dumps({"__key__": list(k) if isinstance(k, tuple) else k,
-                                    "value": v}, default=str))
+                f.write(
+                    json.dumps(
+                        {"__key__": list(k) if isinstance(k, tuple) else k, "value": v}, default=str
+                    )
+                )
                 f.write("\n")
         tmp.replace(self.path)
 
@@ -91,8 +95,11 @@ class JsonlStore(MutableMapping):
         self._load()[k] = v
         # Append-only fast path; rewrite happens on delete or close.
         with self.path.open("a") as f:
-            f.write(json.dumps({"__key__": list(k) if isinstance(k, tuple) else k,
-                                "value": v}, default=str))
+            f.write(
+                json.dumps(
+                    {"__key__": list(k) if isinstance(k, tuple) else k, "value": v}, default=str
+                )
+            )
             f.write("\n")
 
     def __delitem__(self, k):
@@ -115,6 +122,7 @@ def _to_hashable(v):
 # ---------------------------------------------------------------------------
 # BarStore — parquet-backed, partitioned by (symbol, timeframe)
 # ---------------------------------------------------------------------------
+
 
 class BarStore(MutableMapping):
     """Mapping interface over parquet files of OHLCV bars.
@@ -201,8 +209,14 @@ class BarStore(MutableMapping):
                 # The cache index is tz-aware UTC; coerce naive timestamps.
                 ts = ts.replace(tzinfo=__import__("datetime").timezone.utc)
             rows_by_sym.setdefault(str(b.symbol), []).append(
-                {"ts": ts, "open": b.open, "high": b.high, "low": b.low,
-                 "close": b.close, "volume": b.volume}
+                {
+                    "ts": ts,
+                    "open": b.open,
+                    "high": b.high,
+                    "low": b.low,
+                    "close": b.close,
+                    "volume": b.volume,
+                }
             )
         total = 0
         for sym_str, rows in rows_by_sym.items():
@@ -240,18 +254,24 @@ class BarStore(MutableMapping):
             df = df[df.index <= end]
         out: list[Bar] = []
         for ts, row in df.iterrows():
-            out.append(Bar(
-                symbol=symbol, ts=ts.to_pydatetime(),
-                open=float(row["open"]), high=float(row["high"]),
-                low=float(row["low"]), close=float(row["close"]),
-                volume=float(row["volume"]),
-            ))
+            out.append(
+                Bar(
+                    symbol=symbol,
+                    ts=ts.to_pydatetime(),
+                    open=float(row["open"]),
+                    high=float(row["high"]),
+                    low=float(row["low"]),
+                    close=float(row["close"]),
+                    volume=float(row["volume"]),
+                )
+            )
         return out
 
 
 # ---------------------------------------------------------------------------
 # Mall — dict of stores
 # ---------------------------------------------------------------------------
+
 
 def mall(root: str | Path = ".hedger") -> dict[str, MutableMapping]:
     """Return the default hedger mall: {name -> store}.
@@ -263,14 +283,14 @@ def mall(root: str | Path = ".hedger") -> dict[str, MutableMapping]:
     """
     root = Path(root)
     return {
-        "bars":        BarStore(root / "bars"),
-        "signals":     JsonlStore(root / "signals.jsonl"),
-        "decisions":   JsonlStore(root / "decisions.jsonl"),
-        "orders":      JsonlStore(root / "orders.jsonl"),
-        "fills":       JsonlStore(root / "fills.jsonl"),
-        "news":        JsonlStore(root / "news.jsonl"),
-        "positions":   JsonlStore(root / "positions.jsonl"),
-        "drifts":      JsonlStore(root / "drifts.jsonl"),
+        "bars": BarStore(root / "bars"),
+        "signals": JsonlStore(root / "signals.jsonl"),
+        "decisions": JsonlStore(root / "decisions.jsonl"),
+        "orders": JsonlStore(root / "orders.jsonl"),
+        "fills": JsonlStore(root / "fills.jsonl"),
+        "news": JsonlStore(root / "news.jsonl"),
+        "positions": JsonlStore(root / "positions.jsonl"),
+        "drifts": JsonlStore(root / "drifts.jsonl"),
         "reflections": JsonlStore(root / "reflections.jsonl"),
     }
 
@@ -278,6 +298,7 @@ def mall(root: str | Path = ".hedger") -> dict[str, MutableMapping]:
 # ---------------------------------------------------------------------------
 # Position serialisation (snapshots; reconciliation lives in hedger.live.runner)
 # ---------------------------------------------------------------------------
+
 
 def positions_to_snapshot(
     positions: "Mapping[Symbol, Position]",
@@ -316,6 +337,7 @@ def positions_to_snapshot(
 # ---------------------------------------------------------------------------
 # Round-trip helpers (dataclass <-> dict). Kept here, near the stores.
 # ---------------------------------------------------------------------------
+
 
 def signal_to_dict(s: Signal) -> dict:
     return {

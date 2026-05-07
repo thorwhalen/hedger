@@ -83,7 +83,10 @@ def pead_drift(
             ts=w[-1].ts,
             score=float(score),
             strategy="pead_drift",
-            meta={"sue": sue, "bars_since": bars_since,
-                  "event_ts": last_event["ts"],
-                  "drift_window_bars": drift_window_bars},
+            meta={
+                "sue": sue,
+                "bars_since": bars_since,
+                "event_ts": last_event["ts"],
+                "drift_window_bars": drift_window_bars,
+            },
         )

@@ -59,8 +59,7 @@ def pairs_zscore(
         wb = list(bars.get(sym_b, []))
         if len(wa) < lookback or len(wb) < lookback:
             continue
-        spread = [wa[-lookback + i].close - beta * wb[-lookback + i].close
-                  for i in range(lookback)]
+        spread = [wa[-lookback + i].close - beta * wb[-lookback + i].close for i in range(lookback)]
         mean, std = _stats(spread)
         if std == 0:
             continue
@@ -71,12 +70,28 @@ def pairs_zscore(
         score_b = -score_a
         ts = wa[-1].ts
         yield Signal(
-            symbol=sym_a, ts=ts, score=float(score_a), strategy="pairs_zscore",
-            meta={"z": float(z), "pair": (sym_a.ticker, sym_b.ticker),
-                  "leg": "A", "beta": float(beta), "lookback": lookback},
+            symbol=sym_a,
+            ts=ts,
+            score=float(score_a),
+            strategy="pairs_zscore",
+            meta={
+                "z": float(z),
+                "pair": (sym_a.ticker, sym_b.ticker),
+                "leg": "A",
+                "beta": float(beta),
+                "lookback": lookback,
+            },
         )
         yield Signal(
-            symbol=sym_b, ts=ts, score=float(score_b), strategy="pairs_zscore",
-            meta={"z": float(z), "pair": (sym_a.ticker, sym_b.ticker),
-                  "leg": "B", "beta": float(beta), "lookback": lookback},
+            symbol=sym_b,
+            ts=ts,
+            score=float(score_b),
+            strategy="pairs_zscore",
+            meta={
+                "z": float(z),
+                "pair": (sym_a.ticker, sym_b.ticker),
+                "leg": "B",
+                "beta": float(beta),
+                "lookback": lookback,
+            },
         )

@@ -25,6 +25,7 @@ from hedger.base import AssetClass, Bar, Symbol
 # yfinance — free, daily/intraday up to 60 days, no API key
 # ---------------------------------------------------------------------------
 
+
 class YFinanceSource:
     """Free OHLCV via yfinance. Best for daily research and offline backtests.
 
@@ -46,11 +47,22 @@ class YFinanceSource:
             import yfinance as yf
         except ImportError as e:
             raise ImportError("`pip install yfinance` to use YFinanceSource.") from e
-        interval = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "60m",
-                    "1d": "1d", "1wk": "1wk"}.get(timeframe, timeframe)
+        interval = {
+            "1m": "1m",
+            "5m": "5m",
+            "15m": "15m",
+            "1h": "60m",
+            "1d": "1d",
+            "1wk": "1wk",
+        }.get(timeframe, timeframe)
         df = yf.download(
-            symbol.ticker, start=start, end=end, interval=interval,
-            auto_adjust=True, progress=False, threads=False,
+            symbol.ticker,
+            start=start,
+            end=end,
+            interval=interval,
+            auto_adjust=True,
+            progress=False,
+            threads=False,
         )
         if df.empty:
             return
@@ -72,6 +84,7 @@ class YFinanceSource:
 # ---------------------------------------------------------------------------
 # Alpaca — US equities/ETF/options/crypto, paper or live
 # ---------------------------------------------------------------------------
+
 
 class AlpacaSource:
     """Alpaca historical bars via the official `alpaca-py` SDK.
@@ -105,6 +118,7 @@ class AlpacaSource:
     @staticmethod
     def _timeframe(timeframe: str):
         from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+
         unit_map = {
             "m": TimeFrameUnit.Minute,
             "h": TimeFrameUnit.Hour,
@@ -124,13 +138,13 @@ class AlpacaSource:
         from alpaca.data.requests import CryptoBarsRequest, StockBarsRequest
 
         tf = self._timeframe(timeframe)
-        is_crypto = (
-            symbol.asset_class is AssetClass.CRYPTO or "/" in symbol.ticker
-        )
+        is_crypto = symbol.asset_class is AssetClass.CRYPTO or "/" in symbol.ticker
         if is_crypto:
             req = CryptoBarsRequest(
-                symbol_or_symbols=[symbol.ticker], timeframe=tf,
-                start=start, end=end,
+                symbol_or_symbols=[symbol.ticker],
+                timeframe=tf,
+                start=start,
+                end=end,
             )
             res = self._crypto.get_crypto_bars(req)
         else:
@@ -139,11 +153,15 @@ class AlpacaSource:
                     "AlpacaSource: ALPACA_API_KEY/ALPACA_SECRET_KEY missing for stock bars."
                 )
             req = StockBarsRequest(
-                symbol_or_symbols=[symbol.ticker], timeframe=tf,
-                start=start, end=end,
+                symbol_or_symbols=[symbol.ticker],
+                timeframe=tf,
+                start=start,
+                end=end,
             )
             res = self._stock.get_stock_bars(req)
-        ticker_bars = res.data.get(symbol.ticker, []) if hasattr(res, "data") else res[symbol.ticker]
+        ticker_bars = (
+            res.data.get(symbol.ticker, []) if hasattr(res, "data") else res[symbol.ticker]
+        )
         for bar in ticker_bars:
             yield Bar(
                 symbol=symbol,
@@ -159,6 +177,7 @@ class AlpacaSource:
 # ---------------------------------------------------------------------------
 # AlpacaNews — feeds mall["news"] with normalised headlines
 # ---------------------------------------------------------------------------
+
 
 class AlpacaNews:
     """Wrapper over alpaca-py's ``NewsClient``.
@@ -181,9 +200,7 @@ class AlpacaNews:
         key = api_key or os.environ.get("ALPACA_API_KEY")
         sec = secret or os.environ.get("ALPACA_SECRET_KEY")
         if not (key and sec):
-            raise RuntimeError(
-                "AlpacaNews requires ALPACA_API_KEY and ALPACA_SECRET_KEY in env."
-            )
+            raise RuntimeError("AlpacaNews requires ALPACA_API_KEY and ALPACA_SECRET_KEY in env.")
         self._client = NewsClient(key, sec)
 
     def fetch(
@@ -195,6 +212,7 @@ class AlpacaNews:
         limit: int = 50,
     ) -> Iterator[dict]:
         from alpaca.data.requests import NewsRequest
+
         sym_str = ",".join(symbols) if not isinstance(symbols, str) else symbols
         kwargs: dict = {"symbols": sym_str, "limit": limit}
         if start is not None:
@@ -209,8 +227,9 @@ class AlpacaNews:
                 "headline": getattr(n, "headline", ""),
                 "summary": getattr(n, "summary", "") or "",
                 "symbols": list(getattr(n, "symbols", []) or []),
-                "created_at": (n.created_at.isoformat()
-                               if getattr(n, "created_at", None) else None),
+                "created_at": (
+                    n.created_at.isoformat() if getattr(n, "created_at", None) else None
+                ),
                 "url": getattr(n, "url", None),
                 "author": getattr(n, "author", None),
             }
@@ -219,6 +238,7 @@ class AlpacaNews:
 # ---------------------------------------------------------------------------
 # CCXT — unified API across most crypto exchanges
 # ---------------------------------------------------------------------------
+
 
 class CCXTSource:
     """OHLCV via CCXT. Pass an exchange id like 'kraken' or 'binance'.
@@ -248,8 +268,9 @@ class CCXTSource:
         since = int(start.timestamp() * 1000)
         end_ms = int(end.timestamp() * 1000)
         while since < end_ms:
-            chunk = self.exchange.fetch_ohlcv(symbol.ticker, timeframe=timeframe,
-                                              since=since, limit=1000)
+            chunk = self.exchange.fetch_ohlcv(
+                symbol.ticker, timeframe=timeframe, since=since, limit=1000
+            )
             if not chunk:
                 break
             for ts_ms, o, h, l, c, v in chunk:
@@ -258,8 +279,11 @@ class CCXTSource:
                 yield Bar(
                     symbol=symbol,
                     ts=datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc),
-                    open=float(o), high=float(h), low=float(l),
-                    close=float(c), volume=float(v),
+                    open=float(o),
+                    high=float(h),
+                    low=float(l),
+                    close=float(c),
+                    volume=float(v),
                 )
             since = chunk[-1][0] + 1
 

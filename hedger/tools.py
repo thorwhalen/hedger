@@ -41,8 +41,10 @@ def doctor(*, broker: str = "alpaca", llm: bool = True) -> str:
         out.append(f"  - {k}: {v}")
     if any(k.endswith("_API_KEY") or k.endswith("_SECRET_KEY") for k in missing):
         out.append("")
-        out.append("Hint: run `hedger install` to create a 600-mode envfile, "
-                   "then `hedger where-keys` to see exactly where to put them.")
+        out.append(
+            "Hint: run `hedger install` to create a 600-mode envfile, "
+            "then `hedger where-keys` to see exactly where to put them."
+        )
     return "\n".join(out)
 
 
@@ -73,12 +75,15 @@ def fetch(
     bars = list(src.bars(sym, start=start, end=end, timeframe=timeframe))
     if not bars:
         return f"No bars fetched for {symbol}."
-    return json.dumps({
-        "n": len(bars),
-        "first": bars[0].ts.isoformat(),
-        "last": bars[-1].ts.isoformat(),
-        "last_close": bars[-1].close,
-    }, indent=2)
+    return json.dumps(
+        {
+            "n": len(bars),
+            "first": bars[0].ts.isoformat(),
+            "last": bars[-1].ts.isoformat(),
+            "last_close": bars[-1].close,
+        },
+        indent=2,
+    )
 
 
 def backtest(
@@ -125,9 +130,9 @@ def tick(
     cfg = load_config(config)
     if broker or symbols:
         from dataclasses import replace
+
         new_broker = replace(cfg.broker, name=broker) if broker else cfg.broker
-        new_universe = (tuple(s.strip() for s in symbols.split(","))
-                        if symbols else cfg.universe)
+        new_universe = tuple(s.strip() for s in symbols.split(",")) if symbols else cfg.universe
         cfg = replace(cfg, broker=new_broker, universe=new_universe)
     runner = make_runner(cfg, strategy_name=strategy)
     summary = runner.tick()
@@ -152,6 +157,7 @@ def reflect(*, dry_run: bool = False, config: str | None = None) -> str:
 def brief(*, config: str | None = None) -> str:
     """Print today's mall-derived brief without launching reflection."""
     from hedger.data import mall
+
     return json.dumps(daily_brief(mall()), indent=2, default=str)
 
 
@@ -171,8 +177,14 @@ def status(*, config: str | None = None, broker: str | None = None) -> str:
     bk = make_broker(cfg.broker.name)
     m = default_mall()
 
-    out = {"broker": cfg.broker.name, "nav": None, "positions": [],
-           "today": {}, "recent_vetoes": [], "last_drift": None}
+    out = {
+        "broker": cfg.broker.name,
+        "nav": None,
+        "positions": [],
+        "today": {},
+        "recent_vetoes": [],
+        "last_drift": None,
+    }
     try:
         out["nav"] = bk.nav()
     except Exception as e:
@@ -199,8 +211,9 @@ def status(*, config: str | None = None, broker: str | None = None) -> str:
 
 # Aliases so argh exposes them as `hedger install` / `hedger where-keys`
 # without the importer-name collision (`install` would shadow the symbol).
-def install(*, systemd: bool = False, envfile: str | None = None,
-            workdir: str | None = None) -> str:
+def install(
+    *, systemd: bool = False, envfile: str | None = None, workdir: str | None = None
+) -> str:
     """Set up hedger for long-running deployment (idempotent envfile + systemd unit)."""
     return install_cmd(systemd=systemd, envfile=envfile, workdir=workdir)
 
@@ -228,4 +241,5 @@ _dispatch_funcs = [
 
 if __name__ == "__main__":
     import argh
+
     argh.dispatch_commands(_dispatch_funcs)

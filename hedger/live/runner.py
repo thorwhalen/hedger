@@ -62,6 +62,7 @@ log = get_logger("hedger.live")
 def _latest_fill_ts(mall: Mapping) -> "datetime | None":
     """Return the latest fill ts in mall["fills"] if any, else None."""
     from datetime import datetime as _dt
+
     try:
         store = mall["fills"]
     except (KeyError, TypeError):
@@ -86,6 +87,7 @@ def _latest_fill_ts(mall: Mapping) -> "datetime | None":
 @dataclass
 class Runner:
     """Composable application service. All seams are constructor-injected."""
+
     config: Config
     strategy: Strategy
     broker: Broker
@@ -93,7 +95,7 @@ class Runner:
     sizer: Sizer = equal_weight_sizer
     mall: Mapping = field(default_factory=default_mall)
     notifier: Notifier = field(default_factory=LogNotifier)
-    news_source: object | None = None        # AlpacaNews-like, lazy
+    news_source: object | None = None  # AlpacaNews-like, lazy
     news_refresh_minutes: int = 60
     run_id: str = field(default_factory=lambda: utc_now().isoformat(timespec="seconds"))
     _nav_today_open: float | None = field(default=None, init=False)
@@ -129,16 +131,15 @@ class Runner:
             for sym, pos in broker_positions.items():
                 prev_qty = float(prev_by_symbol.get(str(sym), {}).get("qty", 0.0))
                 if abs(pos.qty - prev_qty) > eps:
-                    drifts.append({"symbol": str(sym),
-                                   "prev_qty": prev_qty, "broker_qty": pos.qty})
+                    drifts.append({"symbol": str(sym), "prev_qty": prev_qty, "broker_qty": pos.qty})
             # Also flag symbols the journal saw that the broker no longer reports.
             for sym_str, prev_row in prev_by_symbol.items():
                 if abs(float(prev_row.get("qty", 0.0))) <= eps:
                     continue
                 if not any(str(s) == sym_str for s in broker_positions):
-                    drifts.append({"symbol": sym_str,
-                                   "prev_qty": float(prev_row["qty"]),
-                                   "broker_qty": 0.0})
+                    drifts.append(
+                        {"symbol": sym_str, "prev_qty": float(prev_row["qty"]), "broker_qty": 0.0}
+                    )
             for d in drifts:
                 log.warning("position_drift", **d, label=snapshot_label)
             # Persist drifts to the mall so the brief / reflection cycle
@@ -148,14 +149,15 @@ class Runner:
                 drift_ts = utc_now().isoformat(timespec="seconds")
                 for i, d in enumerate(drifts):
                     drift_store[(drift_ts, snapshot_label, str(i))] = {
-                        **d, "ts": drift_ts, "label": snapshot_label,
+                        **d,
+                        "ts": drift_ts,
+                        "label": snapshot_label,
                     }
             except (KeyError, TypeError):
                 pass
 
         snap_ts = utc_now().isoformat(timespec="seconds")
-        snapshot = positions_to_snapshot(broker_positions,
-                                         nav=broker_nav, ts=snap_ts)
+        snapshot = positions_to_snapshot(broker_positions, nav=broker_nav, ts=snap_ts)
         try:
             self.mall["positions"][(snap_ts, snapshot_label)] = snapshot
         except (TypeError, KeyError):
@@ -200,9 +202,10 @@ class Runner:
         if self.news_source is None:
             return 0
         now = utc_now()
-        if (self._last_news_fetch is not None
-                and (now - self._last_news_fetch).total_seconds()
-                < self.news_refresh_minutes * 60):
+        if (
+            self._last_news_fetch is not None
+            and (now - self._last_news_fetch).total_seconds() < self.news_refresh_minutes * 60
+        ):
             return 0
         tickers = [s.ticker for s in symbols if s.asset_class is not AssetClass.CRYPTO]
         if not tickers:
@@ -210,15 +213,15 @@ class Runner:
         ingested = 0
         try:
             for item in self.news_source.fetch(
-                tickers, start=now - timedelta(hours=24), limit=50,
+                tickers,
+                start=now - timedelta(hours=24),
+                limit=50,
             ):
-                key = (item.get("created_at") or now.isoformat(),
-                       str(item.get("id") or ingested))
+                key = (item.get("created_at") or now.isoformat(), str(item.get("id") or ingested))
                 self.mall["news"][key] = item
                 ingested += 1
         except Exception as e:
-            log.warning("news_fetch_failed",
-                        error=f"{type(e).__name__}: {e}")
+            log.warning("news_fetch_failed", error=f"{type(e).__name__}: {e}")
             return 0
         self._last_news_fetch = now
         return ingested
@@ -267,6 +270,7 @@ class Runner:
         first warm-up.
         """
         from hedger.data.stores import BarStore  # local import keeps top-level light
+
         end = utc_now()
         # Alpaca free-tier stock data has a ~15-minute delay; pull back a hair.
         if symbol.asset_class is not AssetClass.CRYPTO and self.source.name == "alpaca":
@@ -279,8 +283,7 @@ class Runner:
         store = self.mall.get("bars") if isinstance(self.mall, Mapping) else None
         cached: list[Bar] = []
         if isinstance(store, BarStore):
-            cached = store.read_bars(symbol, self.config.timeframe,
-                                     start=full_start, end=end)
+            cached = store.read_bars(symbol, self.config.timeframe, start=full_start, end=end)
 
         # If cache covers the whole window with a recent-enough tail, return it.
         if cached:
@@ -293,15 +296,21 @@ class Runner:
         else:
             fetch_start = full_start
 
-        new_bars = list(self.source.bars(
-            symbol, start=fetch_start, end=end, timeframe=self.config.timeframe,
-        ))
+        new_bars = list(
+            self.source.bars(
+                symbol,
+                start=fetch_start,
+                end=end,
+                timeframe=self.config.timeframe,
+            )
+        )
         if new_bars and isinstance(store, BarStore):
             try:
                 store.write_bars(new_bars, timeframe=self.config.timeframe)
             except Exception as e:
-                log.warning("bar_cache_write_failed", symbol=str(symbol),
-                            error=f"{type(e).__name__}: {e}")
+                log.warning(
+                    "bar_cache_write_failed", symbol=str(symbol), error=f"{type(e).__name__}: {e}"
+                )
 
         # Merge cached + new, dedup by ts.
         if not cached:
@@ -370,8 +379,10 @@ class Runner:
             if d2 is None:
                 n_vetoes += 1
                 self.notifier.notify(
-                    "warning", "risk middleware veto",
-                    symbol=str(d.symbol), target_weight=d.target_weight,
+                    "warning",
+                    "risk middleware veto",
+                    symbol=str(d.symbol),
+                    target_weight=d.target_weight,
                     rationale=d.rationale,
                 )
                 continue
@@ -379,14 +390,17 @@ class Runner:
             if d3 is None:
                 n_vetoes += 1
                 self.notifier.notify(
-                    "warning", "tax policy veto",
-                    symbol=str(d.symbol), target_weight=d.target_weight,
+                    "warning",
+                    "tax policy veto",
+                    symbol=str(d.symbol),
+                    target_weight=d.target_weight,
                     policy=getattr(tax_policy, "name", "?"),
                 )
                 continue
             approved.append(d3)
-            self.mall["decisions"][(self.run_id, str(d3.symbol), d3.ts.isoformat())] = \
+            self.mall["decisions"][(self.run_id, str(d3.symbol), d3.ts.isoformat())] = (
                 decision_to_dict(d3)
+            )
 
         # 4. Convert to orders and submit
         last_close = {s: (bars[s][-1].close if bars[s] else 0.0) for s in symbols}
@@ -404,8 +418,9 @@ class Runner:
                 continue
             if not market_open and d.symbol.asset_class is not AssetClass.CRYPTO:
                 n_skipped_market_closed += 1
-                log.info("skip_equity_outside_hours", symbol=str(d.symbol),
-                         qty=qty, run_id=self.run_id)
+                log.info(
+                    "skip_equity_outside_hours", symbol=str(d.symbol), qty=qty, run_id=self.run_id
+                )
                 continue
             client_order_id = f"{self.run_id}:{tick_ts}:{d.symbol}"
             order = Order(
@@ -419,12 +434,16 @@ class Runner:
                 order_id = self.broker.submit(order)
             except Exception as e:
                 # Common cause: duplicate client_order_id on retry; safe to swallow.
-                log.warning("submit_failed", symbol=str(d.symbol),
-                            error=f"{type(e).__name__}: {e}")
+                log.warning("submit_failed", symbol=str(d.symbol), error=f"{type(e).__name__}: {e}")
                 continue
             self.mall["orders"][(self.run_id, client_order_id)] = order_to_dict(order)
-            log.info("order_submitted", id=order_id, symbol=str(d.symbol),
-                     side=order.side.value, qty=order.qty)
+            log.info(
+                "order_submitted",
+                id=order_id,
+                symbol=str(d.symbol),
+                side=order.side.value,
+                qty=order.qty,
+            )
             n_submitted += 1
 
         # 5. Drain fills
@@ -438,13 +457,14 @@ class Runner:
         # Drawdown alert: notify once per day when intraday loss crosses the
         # configured threshold. The risk-middleware circuit-breaker is a
         # harder gate; this alert is an *earlier* warning shot for humans.
-        if (nav_today_open_value > 0 and not self._alerted_drawdown):
+        if nav_today_open_value > 0 and not self._alerted_drawdown:
             loss_pct = (nav_today_open_value - nav_after) / nav_today_open_value
             threshold = self.config.notify.drawdown_alert_pct
             if loss_pct >= threshold:
                 self._alerted_drawdown = True
                 self.notifier.notify(
-                    "warning", "intraday drawdown alert",
+                    "warning",
+                    "intraday drawdown alert",
                     loss_pct=round(loss_pct, 4),
                     threshold=threshold,
                     nav_open=nav_today_open_value,
@@ -455,8 +475,7 @@ class Runner:
         try:
             self.reconcile(snapshot_label=f"tick:{tick_ts}")
         except Exception as e:
-            log.warning("tick_reconcile_failed",
-                        error=f"{type(e).__name__}: {e}")
+            log.warning("tick_reconcile_failed", error=f"{type(e).__name__}: {e}")
 
         return {
             "ts": utc_now().isoformat(),
@@ -482,8 +501,7 @@ def make_runner(cfg: Config | None = None, *, strategy_name: str = "sma_crossove
     try:
         notifier = make_notifier(cfg.notify.kind)
     except Exception as e:
-        log.warning("notifier_unavailable", spec=cfg.notify.kind,
-                    error=f"{type(e).__name__}: {e}")
+        log.warning("notifier_unavailable", spec=cfg.notify.kind, error=f"{type(e).__name__}: {e}")
         notifier = LogNotifier()
     # News source — best effort; not all setups have alpaca creds, and not
     # all strategies need news. Failures are silent; llm_news degrades to
@@ -491,21 +509,29 @@ def make_runner(cfg: Config | None = None, *, strategy_name: str = "sma_crossove
     news_source = None
     try:
         from hedger.data.sources import AlpacaNews
+
         news_source = AlpacaNews()
     except Exception as e:
         log.info("news_source_unavailable", error=f"{type(e).__name__}: {e}")
-    runner = Runner(config=cfg, strategy=strat, broker=broker, source=source,
-                    notifier=notifier, news_source=news_source)
+    runner = Runner(
+        config=cfg,
+        strategy=strat,
+        broker=broker,
+        source=source,
+        notifier=notifier,
+        news_source=news_source,
+    )
     # Best-effort: if we're talking to Alpaca, kick off the fill stream so we
     # don't have to poll. Polling is the fallback in fills().
     if isinstance(broker, AlpacaBroker):
+
         def _on_stream_event(event_name, ctx):
             level = "warning" if event_name == "died" else "info"
             try:
-                runner.notifier.notify(level, f"alpaca fill stream: {event_name}",
-                                       **ctx)
+                runner.notifier.notify(level, f"alpaca fill stream: {event_name}", **ctx)
             except Exception:
                 pass
+
         try:
             broker.start_fill_stream(on_stream_event=_on_stream_event)
         except Exception as e:
@@ -517,16 +543,14 @@ def make_runner(cfg: Config | None = None, *, strategy_name: str = "sma_crossove
             if seed is not None:
                 broker.seed_fill_watermark(seed)
         except Exception as e:
-            log.info("fill_watermark_seed_failed",
-                     error=f"{type(e).__name__}: {e}")
+            log.info("fill_watermark_seed_failed", error=f"{type(e).__name__}: {e}")
     # Snapshot + reconcile against any prior journal — surfaces drift that
     # accumulated while the runner wasn't ticking (e.g. process restart,
     # manual broker activity).
     try:
         runner.reconcile(snapshot_label="startup")
     except Exception as e:
-        log.warning("startup_reconcile_failed",
-                    error=f"{type(e).__name__}: {e}")
+        log.warning("startup_reconcile_failed", error=f"{type(e).__name__}: {e}")
     return runner
 
 

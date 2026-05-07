@@ -27,6 +27,7 @@ def register(name: str) -> Callable[[Strategy], Strategy]:
     >>> 'demo_noop' in available()
     True
     """
+
     def wrap(strat: Strategy) -> Strategy:
         if not hasattr(strat, "name"):
             try:
@@ -35,6 +36,7 @@ def register(name: str) -> Callable[[Strategy], Strategy]:
                 pass
         _REGISTRY[name] = strat
         return strat
+
     return wrap
 
 

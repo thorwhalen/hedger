@@ -39,6 +39,7 @@ from hedger.base import (
 # PaperBroker — fast, deterministic, fee-aware. Use for backtest AND paper.
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PaperBroker:
     """In-memory broker that fills market orders against a price oracle.
@@ -46,10 +47,11 @@ class PaperBroker:
     `price_fn(symbol) -> float` injects a price source so the same code runs
     in backtest (price = bar close) and live paper (price = latest quote).
     """
+
     name: str = "paper"
     starting_cash: float = 100_000.0
-    fee_bps: float = 5.0           # 0.05% per side, tune to your venue
-    slippage_bps: float = 2.0      # 0.02% adverse move on market orders
+    fee_bps: float = 5.0  # 0.05% per side, tune to your venue
+    slippage_bps: float = 2.0  # 0.02% adverse move on market orders
 
     cash: float = field(init=False)
     _positions: dict[Symbol, Position] = field(default_factory=dict, init=False)
@@ -81,9 +83,15 @@ class PaperBroker:
         # equivalent: cash -= signed_notional + fee
         pos = self._positions.setdefault(order.symbol, Position(symbol=order.symbol))
         fill = Fill(
-            order_id=order_id, symbol=order.symbol, side=order.side,
-            qty=order.qty, price=fill_px, fee=fee, ts=utc_now(),
-            venue=self.name, meta={"slippage_bps": self.slippage_bps},
+            order_id=order_id,
+            symbol=order.symbol,
+            side=order.side,
+            qty=order.qty,
+            price=fill_px,
+            fee=fee,
+            ts=utc_now(),
+            venue=self.name,
+            meta={"slippage_bps": self.slippage_bps},
         )
         pos.apply(fill)
         self._fills.append(fill)
@@ -99,8 +107,9 @@ class PaperBroker:
         return dict(self._positions)
 
     def nav(self) -> float:
-        equity = sum(p.qty * (self.price_fn(p.symbol) or p.avg_price)
-                     for p in self._positions.values())
+        equity = sum(
+            p.qty * (self.price_fn(p.symbol) or p.avg_price) for p in self._positions.values()
+        )
         return self.cash + equity
 
 
@@ -139,6 +148,7 @@ class AlpacaBroker:
     orders fill near-instantly; live trading should prefer the stream so
     partial fills are not missed.
     """
+
     name: str = "alpaca"
     paper: bool = True
     api_key: str | None = None
@@ -162,9 +172,7 @@ class AlpacaBroker:
         key = self.api_key or os.environ.get("ALPACA_API_KEY")
         sec = self.secret or os.environ.get("ALPACA_SECRET_KEY")
         if not (key and sec):
-            raise RuntimeError(
-                "AlpacaBroker needs ALPACA_API_KEY and ALPACA_SECRET_KEY."
-            )
+            raise RuntimeError("AlpacaBroker needs ALPACA_API_KEY and ALPACA_SECRET_KEY.")
         self.api_key = key
         self.secret = sec
         self._client = TradingClient(key, sec, paper=self.paper)
@@ -184,10 +192,7 @@ class AlpacaBroker:
 
         side = OrderSide.BUY if order.side is Side.BUY else OrderSide.SELL
         tif_value = order.time_in_force
-        is_crypto = (
-            order.symbol.asset_class is AssetClass.CRYPTO
-            or "/" in order.symbol.ticker
-        )
+        is_crypto = order.symbol.asset_class is AssetClass.CRYPTO or "/" in order.symbol.ticker
         if is_crypto and tif_value not in _CRYPTO_TIFS:
             tif_value = TimeInForce.GTC
         tif = AlpacaTif(tif_value.value)
@@ -208,7 +213,9 @@ class AlpacaBroker:
                 req = MarketOrderRequest(qty=order.qty, **common)
         else:
             req = LimitOrderRequest(
-                qty=order.qty, limit_price=order.limit_price, **common,
+                qty=order.qty,
+                limit_price=order.limit_price,
+                **common,
             )
         resp = self._client.submit_order(req)
         return str(resp.id)
@@ -241,8 +248,7 @@ class AlpacaBroker:
                 if f.order_id in self._seen_fills:
                     continue
                 self._seen_fills.add(f.order_id)
-                if f.ts and (self._fill_watermark is None
-                             or f.ts > self._fill_watermark):
+                if f.ts and (self._fill_watermark is None or f.ts > self._fill_watermark):
                     self._fill_watermark = f.ts
                 yield f
 
@@ -254,7 +260,9 @@ class AlpacaBroker:
         else:
             after = utc_now() - timedelta(days=1)
         req = GetOrdersRequest(
-            status=QueryOrderStatus.CLOSED, limit=200, after=after,
+            status=QueryOrderStatus.CLOSED,
+            limit=200,
+            after=after,
         )
         for o in self._client.get_orders(filter=req):
             if not o.filled_qty or float(o.filled_qty) <= 0:
@@ -343,8 +351,7 @@ class AlpacaBroker:
             backoff = 1.0
             while not self._stream_stopping:
                 try:
-                    stream = TradingStream(self.api_key, self.secret,
-                                           paper=self.paper)
+                    stream = TradingStream(self.api_key, self.secret, paper=self.paper)
                     self._stream_obj = stream
                     stream.subscribe_trade_updates(handler)
                     if on_stream_event:
@@ -356,20 +363,26 @@ class AlpacaBroker:
                         break
                 except Exception as e:
                     if on_stream_event:
-                        on_stream_event("died", {
-                            "error": f"{type(e).__name__}: {e}",
-                            "restart_count": self._stream_restart_count,
-                        })
+                        on_stream_event(
+                            "died",
+                            {
+                                "error": f"{type(e).__name__}: {e}",
+                                "restart_count": self._stream_restart_count,
+                            },
+                        )
                 if self._stream_stopping:
                     break
                 _time.sleep(min(backoff, max_backoff_s))
                 backoff = min(backoff * 2, max_backoff_s)
                 self._stream_restart_count += 1
                 if on_stream_event:
-                    on_stream_event("reconnecting", {
-                        "restart_count": self._stream_restart_count,
-                        "backoff_s": backoff,
-                    })
+                    on_stream_event(
+                        "reconnecting",
+                        {
+                            "restart_count": self._stream_restart_count,
+                            "backoff_s": backoff,
+                        },
+                    )
 
         t = threading.Thread(target=_runner, name="alpaca-fill-stream", daemon=True)
         t.start()
@@ -396,7 +409,9 @@ class AlpacaBroker:
                 asset_class=_alpaca_to_asset_class(getattr(p, "asset_class", "")),
             )
             out[sym] = Position(
-                symbol=sym, qty=float(p.qty), avg_price=float(p.avg_entry_price),
+                symbol=sym,
+                qty=float(p.qty),
+                avg_price=float(p.avg_entry_price),
             )
         return out
 

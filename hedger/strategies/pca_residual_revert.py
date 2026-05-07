@@ -34,7 +34,7 @@ def _aligned_returns(
         w = list(bar_iter)
         if len(w) < lookback + 1:
             continue
-        closes = np.array([b.close for b in w[-(lookback + 1):]], dtype=float)
+        closes = np.array([b.close for b in w[-(lookback + 1) :]], dtype=float)
         if (closes <= 0).any():
             continue
         rets = np.diff(closes) / closes[:-1]
@@ -87,9 +87,7 @@ def pca_residual_revert(
     eigvals, eigvecs = np.linalg.eigh(cov)
     top = eigvecs[:, -n_factors_eff:]
     factor_rets = rets @ top
-    last_ts_by_sym: dict[Symbol, Any] = {
-        sym: list(bars[sym])[-1].ts for sym in universe
-    }
+    last_ts_by_sym: dict[Symbol, Any] = {sym: list(bars[sym])[-1].ts for sym in universe}
     for i, sym in enumerate(universe):
         beta, *_ = np.linalg.lstsq(factor_rets, rets[:, i], rcond=None)
         resid = rets[:, i] - factor_rets @ beta
@@ -107,6 +105,10 @@ def pca_residual_revert(
             ts=last_ts_by_sym[sym],
             score=float(score),
             strategy="pca_residual_revert",
-            meta={"z": float(z), "n_factors": n_factors_eff,
-                  "lookback": lookback, "entry_z": entry_z},
+            meta={
+                "z": float(z),
+                "n_factors": n_factors_eff,
+                "lookback": lookback,
+                "entry_z": entry_z,
+            },
         )

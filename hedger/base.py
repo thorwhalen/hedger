@@ -33,14 +33,17 @@ from typing import (
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class Side(str, Enum):
     """Direction of an order or position."""
+
     BUY = "buy"
     SELL = "sell"
 
 
 class OrderType(str, Enum):
     """Subset of order types we expose. Brokers may support more."""
+
     MARKET = "market"
     LIMIT = "limit"
     STOP = "stop"
@@ -66,6 +69,7 @@ class AssetClass(str, Enum):
 # Identity
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True, slots=True)
 class Symbol:
     """A tradable instrument key.
@@ -74,6 +78,7 @@ class Symbol:
     >>> str(s)
     'coinbase:BTC/USD'
     """
+
     ticker: str
     asset_class: AssetClass
     venue: str = "default"
@@ -86,6 +91,7 @@ class Symbol:
 # Pipeline payloads
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True, slots=True)
 class Bar:
     """OHLCV bar at a fixed cadence.
@@ -95,6 +101,7 @@ class Bar:
     >>> b.close
     181.5
     """
+
     symbol: Symbol
     ts: datetime  # bar close timestamp, tz-aware
     open: float
@@ -112,6 +119,7 @@ class Signal:
     `meta` carries strategy-specific provenance (which features fired, LLM
     rationale, model version, …) so the reflection loop can audit decisions.
     """
+
     symbol: Symbol
     ts: datetime
     score: float
@@ -126,6 +134,7 @@ class Decision:
     Sized in *target weight* (fraction of portfolio NAV). The execution layer
     converts weight deltas to orders given current positions and prices.
     """
+
     symbol: Symbol
     ts: datetime
     target_weight: float
@@ -137,6 +146,7 @@ class Decision:
 @dataclass(frozen=True, slots=True)
 class Order:
     """An order the bot wants the broker to place."""
+
     symbol: Symbol
     side: Side
     qty: float
@@ -151,6 +161,7 @@ class Order:
 @dataclass(frozen=True, slots=True)
 class Fill:
     """Confirmation that part or all of an order executed."""
+
     order_id: str
     symbol: Symbol
     side: Side
@@ -165,6 +176,7 @@ class Fill:
 @dataclass(slots=True)
 class Position:
     """Current holding in a symbol. Mutable because it accumulates fills."""
+
     symbol: Symbol
     qty: float = 0.0
     avg_price: float = 0.0
@@ -178,9 +190,7 @@ class Position:
             self.realized_pnl += signed * (self.avg_price - fill.price) if self.qty else 0.0
             self.avg_price = fill.price
         elif abs(new_qty) > abs(self.qty):  # adding to position
-            self.avg_price = (
-                self.avg_price * self.qty + fill.price * signed
-            ) / new_qty
+            self.avg_price = (self.avg_price * self.qty + fill.price * signed) / new_qty
         else:  # reducing
             self.realized_pnl += -signed * (fill.price - self.avg_price)
         self.qty = new_qty
@@ -189,6 +199,7 @@ class Position:
 # ---------------------------------------------------------------------------
 # Protocols (the seams of the system)
 # ---------------------------------------------------------------------------
+
 
 @runtime_checkable
 class DataSource(Protocol):
@@ -249,9 +260,9 @@ class Broker(Protocol):
 
     name: str
 
-    def submit(self, order: Order) -> str: ...     # returns broker order id
+    def submit(self, order: Order) -> str: ...  # returns broker order id
     def cancel(self, order_id: str) -> None: ...
-    def fills(self) -> Iterable[Fill]: ...         # since last call
+    def fills(self) -> Iterable[Fill]: ...  # since last call
     def positions(self) -> Mapping[Symbol, Position]: ...
     def nav(self) -> float: ...
 

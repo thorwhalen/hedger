@@ -60,7 +60,7 @@ def donchian_breakout(
             continue
         upper = max(b.high for b in w[-fast:-1])
         lower = min(b.low for b in w[-fast:-1])
-        atr = _atr(w[-(atr_window + 1):])
+        atr = _atr(w[-(atr_window + 1) :])
         if atr <= 0:
             continue
         c = w[-1].close
@@ -76,7 +76,11 @@ def donchian_breakout(
             score=float(score),
             strategy="donchian_breakout",
             meta={
-                "upper": float(upper), "lower": float(lower), "atr": float(atr),
-                "fast": fast, "slow": slow, "atr_window": atr_window,
+                "upper": float(upper),
+                "lower": float(lower),
+                "atr": float(atr),
+                "fast": fast,
+                "slow": slow,
+                "atr_window": atr_window,
             },
         )

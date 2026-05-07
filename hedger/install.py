@@ -37,10 +37,14 @@ KNOWN_SECRETS: tuple[str, ...] = (
 # TOML keys (lowercased) matching these patterns are refused by the config
 # loader  it almost certainly means a user pasted a secret into config.toml.
 FORBIDDEN_TOML_SUFFIXES: tuple[str, ...] = (
-    "_key", "_secret", "_token", "_password",
+    "_key",
+    "_secret",
+    "_token",
+    "_password",
 )
 FORBIDDEN_TOML_PREFIXES: tuple[str, ...] = (
-    "anthropic_", "alpaca_",
+    "anthropic_",
+    "alpaca_",
 )
 
 
@@ -55,9 +59,8 @@ def is_secret_key_name(name: str) -> bool:
     False
     """
     n = name.lower()
-    return (
-        any(n.endswith(s) for s in FORBIDDEN_TOML_SUFFIXES)
-        or any(n.startswith(p) for p in FORBIDDEN_TOML_PREFIXES)
+    return any(n.endswith(s) for s in FORBIDDEN_TOML_SUFFIXES) or any(
+        n.startswith(p) for p in FORBIDDEN_TOML_PREFIXES
     )
 
 
@@ -232,8 +235,10 @@ def install(
         out.append(f"     missing: {', '.join(missing)}")
     if systemd:
         scope = "" if _is_root() else "--user "
-        out.append(f"  2. Activate:      systemctl {scope}daemon-reload "
-                   f"&& systemctl {scope}enable --now hedger.service")
+        out.append(
+            f"  2. Activate:      systemctl {scope}daemon-reload "
+            f"&& systemctl {scope}enable --now hedger.service"
+        )
         out.append(f"  3. Watch logs:    journalctl {scope}-u hedger.service -f")
     else:
         out.append("  2. (Optional) Re-run with --systemd to also create a systemd unit.")

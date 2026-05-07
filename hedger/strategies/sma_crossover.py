@@ -43,6 +43,5 @@ def sma_crossover(
             ts=bar_list[-1].ts,
             score=score,
             strategy="sma_crossover",
-            meta={"fast": fast, "slow": slow,
-                  "fast_ma": float(fast_ma), "slow_ma": float(slow_ma)},
+            meta={"fast": fast, "slow": slow, "fast_ma": float(fast_ma), "slow_ma": float(slow_ma)},
         )

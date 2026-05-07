@@ -46,11 +46,14 @@ class Notifier(Protocol):
 @dataclass
 class LogNotifier:
     """Default notifier: structured log line. Free, always on."""
+
     name: str = "log"
 
     def notify(self, level: str, message: str, **context) -> None:
         getattr(log, level if level in {"info", "warning", "error"} else "info")(
-            "notify", message=message, **context,
+            "notify",
+            message=message,
+            **context,
         )
 
 
@@ -62,6 +65,7 @@ class WebhookNotifier:
     and Discord both render the ``text`` field as the message body and
     ignore the rest, so this is a single shape that works for both.
     """
+
     url: str
     name: str = "webhook"
     timeout_s: float = 4.0
@@ -79,8 +83,7 @@ class WebhookNotifier:
                 timeout=self.timeout_s,
             )
         except Exception as e:  # pragma: no cover — network
-            log.warning("notify_webhook_failed",
-                        error=f"{type(e).__name__}: {e}")
+            log.warning("notify_webhook_failed", error=f"{type(e).__name__}: {e}")
 
 
 @dataclass
@@ -90,6 +93,7 @@ class TelegramNotifier:
     Set ``TELEGRAM_BOT_TOKEN`` and ``TELEGRAM_CHAT_ID`` in env, or pass
     them in. The bot must already be in a chat with the target user/group.
     """
+
     bot_token: str | None = None
     chat_id: str | None = None
     name: str = "telegram"
@@ -108,6 +112,7 @@ class TelegramNotifier:
         except ImportError:  # pragma: no cover
             return
         import requests
+
         ctx_str = " ".join(f"{k}={v}" for k, v in context.items())
         text = f"[{level.upper()}] {message}" + (f"\n{ctx_str}" if ctx_str else "")
         try:
@@ -117,13 +122,13 @@ class TelegramNotifier:
                 timeout=self.timeout_s,
             )
         except Exception as e:  # pragma: no cover — network
-            log.warning("notify_telegram_failed",
-                        error=f"{type(e).__name__}: {e}")
+            log.warning("notify_telegram_failed", error=f"{type(e).__name__}: {e}")
 
 
 @dataclass
 class MultiNotifier:
     """Fan out to a tuple of notifiers; failures are isolated per-notifier."""
+
     notifiers: tuple = field(default_factory=tuple)
     name: str = "multi"
 
@@ -132,9 +137,11 @@ class MultiNotifier:
             try:
                 n.notify(level, message, **context)
             except Exception as e:  # pragma: no cover
-                log.warning("notify_subnotifier_failed",
-                            notifier=getattr(n, "name", "?"),
-                            error=f"{type(e).__name__}: {e}")
+                log.warning(
+                    "notify_subnotifier_failed",
+                    notifier=getattr(n, "name", "?"),
+                    error=f"{type(e).__name__}: {e}",
+                )
 
 
 def make_notifier(spec: str = "log") -> Notifier:
@@ -158,7 +165,7 @@ def make_notifier(spec: str = "log") -> Notifier:
     if spec == "telegram":
         return TelegramNotifier()
     if spec.startswith("multi:"):
-        sub = [make_notifier(s.strip()) for s in spec[len("multi:"):].split(",")]
+        sub = [make_notifier(s.strip()) for s in spec[len("multi:") :].split(",")]
         return MultiNotifier(notifiers=tuple(sub))
     raise ValueError(
         f"Unknown notifier spec: {spec!r}. Use 'log', 'webhook[:URL]', "

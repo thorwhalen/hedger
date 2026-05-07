@@ -61,7 +61,10 @@ def bollinger_meanrev(
             score=float(score),
             strategy="bollinger_meanrev",
             meta={
-                "z": float(z), "mean": float(mean), "std": float(std),
-                "window": window, "n_std": n_std,
+                "z": float(z),
+                "mean": float(mean),
+                "std": float(std),
+                "window": window,
+                "n_std": n_std,
             },
         )

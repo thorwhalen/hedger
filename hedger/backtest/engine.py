@@ -72,7 +72,9 @@ def backtest_simple(
         return last_price.get(s, 0.0)
 
     broker = PaperBroker(
-        starting_cash=starting_cash, fee_bps=fee_bps, slippage_bps=slippage_bps,
+        starting_cash=starting_cash,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
         price_fn=price_fn,
     )
 
@@ -113,6 +115,7 @@ def backtest_simple(
             if abs(qty) < 1e-9:
                 continue
             from hedger.base import Order, Side, OrderType
+
             order = Order(
                 symbol=d.symbol,
                 side=Side.BUY if qty > 0 else Side.SELL,
@@ -121,16 +124,22 @@ def backtest_simple(
             )
             broker.submit(order)
             for f in broker.fills():
-                trades.append({
-                    "ts": f.ts, "symbol": str(f.symbol), "side": f.side.value,
-                    "qty": f.qty, "price": f.price, "fee": f.fee,
-                })
+                trades.append(
+                    {
+                        "ts": f.ts,
+                        "symbol": str(f.symbol),
+                        "side": f.side.value,
+                        "qty": f.qty,
+                        "price": f.price,
+                        "fee": f.fee,
+                    }
+                )
         nav_series.append((ts, broker.nav()))
 
     nav_idx = pd.Series(dict(nav_series))
     nav_idx.index = pd.to_datetime(nav_idx.index, utc=True)
     rets = nav_idx.pct_change().dropna()
-    sharpe = float((rets.mean() / rets.std()) * (252 ** 0.5)) if rets.std() else None
+    sharpe = float((rets.mean() / rets.std()) * (252**0.5)) if rets.std() else None
     dd = float((nav_idx / nav_idx.cummax() - 1).min())
 
     return BacktestResult(
