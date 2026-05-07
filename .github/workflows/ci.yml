@@ -191,19 +191,6 @@ jobs:
           message: "Release version ${{ env.VERSION }}"
           push: true
 
-  # Optional GitHub Pages
-  github-pages:
-    name: Publish GitHub Pages
-    permissions:
-      contents: write
-      pages: write
-      id-token: write
-    if: "!contains(github.event.head_commit.message, '[skip ci]') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)"
-    needs: publish
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: i2mint/epythet/actions/publish-github-pages@master
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          ignore: "tests/,scrap/,examples/"
+  # GitHub Pages publishing is intentionally disabled for hedger — docs aren't
+  # set up yet ([tool.wads.ci.docs].enabled = false in pyproject.toml). Re-add
+  # the github-pages job from the wads template when ready to publish docs.
