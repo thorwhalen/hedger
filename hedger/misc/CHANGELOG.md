@@ -67,9 +67,10 @@ hedger core to heavyweight libraries.
   features) are deliberately not pulled in yet — `riskfolio-lib` brings
   cvxpy and several solvers, and tsfresh is heavy. Add them when an HRP
   sizer or ML strategy actually lands.
-- The `pandas-ta` core dependency remains a known supply-chain concern
-  per the strategies report; replacing it with `pandas-ta-classic` or
-  TA-Lib is a separate, deliberate change.
+- `pandas-ta` was dropped from the core dependencies on 2026-05-07: it is
+  unused in the codebase (indicators are computed inline) and pinned to
+  Python ≥ 3.12, which broke CI on 3.11. If indicator helpers are needed
+  later, add `pandas-ta-classic` or TA-Lib as a deliberate change.
 - Avoided per the strategies report: original Quantopian forks of pyfolio
   / empyrical / alphalens (abandoned) and `mlfinlab` / `arbitragelab`
   (restrictive licence).
