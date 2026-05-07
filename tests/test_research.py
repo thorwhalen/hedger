@@ -98,6 +98,7 @@ def test_performance_summary_empty_nav_returns_nans():
 def test_find_cointegrated_pairs_recovers_obvious_pair():
     """Two co-integrated names + an unrelated random walk; the cointegrated
     pair should top the screen."""
+    pytest.importorskip("statsmodels")
     rng = np.random.default_rng(42)
     n = 300
     common = np.cumsum(rng.normal(0, 0.01, n))
@@ -123,6 +124,7 @@ def test_find_cointegrated_pairs_recovers_obvious_pair():
 
 
 def test_find_cointegrated_pairs_returns_empty_when_no_cointegration():
+    pytest.importorskip("statsmodels")
     rng = np.random.default_rng(7)
     n = 200
     syms = [Symbol(name, AssetClass.EQUITY) for name in ("X", "Y")]

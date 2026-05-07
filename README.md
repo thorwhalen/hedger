@@ -22,17 +22,17 @@ The nightly **reflection cycle** spawns Claude Code as a subprocess, hands it a 
 ## What it isn't
 
 - An HFT system. The sweet-spot cadence is 1–4 hours; below 5 minutes the infrastructure cost climbs sharply for diminishing returns.
-- A "press button, get rich" tool. Read [`MANUAL_CHECKLIST.md`](../MANUAL_CHECKLIST.md) first. Paper-trade for 2–4 weeks before any real capital.
+- A "press button, get rich" tool. Read [`MANUAL_CHECKLIST.md`](https://github.com/thorwhalen/hedger/blob/master/hedger/misc/docs/MANUAL_CHECKLIST.md) first. Paper-trade for 2–4 weeks before any real capital.
 - A black box. The mall on disk is your full audit trail. `cat .hedger/decisions.jsonl` shows you exactly what the bot decided and why.
 
 ## Read these in order
 
-1. **[`MANUAL_CHECKLIST.md`](../MANUAL_CHECKLIST.md)** — the things only you can do (account signup, API keys, server provisioning).
-2. **[`ARCHITECTURE.md`](../ARCHITECTURE.md)** — the data flow, the four plugin seams, and why the design choices.
-3. **[`ALPACA.md`](../ALPACA.md)** — Alpaca API reference focused on this codebase.
-4. **[`RESEARCH.md`](../RESEARCH.md)** — the survey of frameworks, brokers, LLM trading patterns, and tax considerations that shaped the scaffold (Vancouver-cited).
-5. **[`CLAUDE.md`](CLAUDE.md)** — the house rules the reflection cycle is bound by.
-6. **[`hedger/misc/CHANGELOG.md`](hedger/misc/CHANGELOG.md)** — what's shipped and what's known to be missing.
+1. **[`MANUAL_CHECKLIST.md`](https://github.com/thorwhalen/hedger/blob/master/hedger/misc/docs/MANUAL_CHECKLIST.md)** — the things only you can do (account signup, API keys, server provisioning).
+2. **[`ARCHITECTURE.md`](https://github.com/thorwhalen/hedger/blob/master/hedger/misc/docs/ARCHITECTURE.md)** — the data flow, the four plugin seams, and why the design choices.
+3. **[`ALPACA.md`](https://github.com/thorwhalen/hedger/blob/master/hedger/misc/docs/ALPACA.md)** — Alpaca API reference focused on this codebase.
+4. **[`RESEARCH.md`](https://github.com/thorwhalen/hedger/blob/master/hedger/misc/docs/RESEARCH.md)** — the survey of frameworks, brokers, LLM trading patterns, and tax considerations that shaped the scaffold (Vancouver-cited).
+5. **[`CLAUDE.md`](https://github.com/thorwhalen/hedger/blob/master/CLAUDE.md)** — the house rules the reflection cycle is bound by.
+6. **[`hedger/misc/CHANGELOG.md`](https://github.com/thorwhalen/hedger/blob/master/hedger/misc/CHANGELOG.md)** — what's shipped and what's known to be missing.
 
 ---
 
@@ -250,7 +250,7 @@ print(df.head())   # sorted by sharpe desc
 
 ## Going live
 
-Read [`MANUAL_CHECKLIST.md`](../MANUAL_CHECKLIST.md) Phase 4 first. The short version:
+Read [`MANUAL_CHECKLIST.md`](https://github.com/thorwhalen/hedger/blob/master/hedger/misc/docs/MANUAL_CHECKLIST.md) Phase 4 first. The short version:
 
 1. Paper-trade for **2–4 weeks** with `hedger serve` and check `hedger status` daily.
 2. Confirm the nightly reflection cycle runs cleanly (briefs make sense; no rollbacks for spurious reasons).
@@ -262,7 +262,7 @@ Read [`MANUAL_CHECKLIST.md`](../MANUAL_CHECKLIST.md) Phase 4 first. The short ve
 
 ## Plug-in seams
 
-Add a new strategy / broker / data source / sizer / tax policy / notifier without touching the runner. See [`ARCHITECTURE.md`](../ARCHITECTURE.md) for the patterns and [`.claude/skills/`](hedger/.claude/skills/) for the conventions.
+Add a new strategy / broker / data source / sizer / tax policy / notifier without touching the runner. See [`ARCHITECTURE.md`](https://github.com/thorwhalen/hedger/blob/master/hedger/misc/docs/ARCHITECTURE.md) for the patterns and [`.claude/skills/`](https://github.com/thorwhalen/hedger/tree/master/.claude/skills) for the conventions.
 
 ```
 hedger/base.py            ← dataclasses + Protocols (the trading vocabulary, SSOT)
