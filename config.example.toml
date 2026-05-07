@@ -1,0 +1,46 @@
+# hedger config — copy to `config.toml` and edit. Secrets go in env vars.
+
+universe = ["SPY", "QQQ", "BTC/USD"]
+timeframe = "1h"
+base_currency = "USD"
+tax_policy = "none"      # "none" | "us_wash_sale" | "crypto_lifo"
+
+[broker]
+# "alpaca:paper" is the recommended default; flip to "alpaca:live" only after
+# weeks of clean paper trading. "paper" (no colon) is the in-memory broker
+# used by the backtester and for offline development.
+name   = "alpaca:paper"
+paper  = true
+# base_url = "https://paper-api.alpaca.markets"
+
+[data]
+primary    = "alpaca"     # "alpaca" | "yfinance" | "ccxt:kraken"
+cache_dir  = ".hedger/cache"
+timeframe  = "1h"
+
+[reflection]
+# The overnight self-improvement cycle. Off by default — flip to `true` once
+# you trust the live runner and have `claude` (Claude Code) on PATH.
+enabled         = false
+cron            = "0 22 * * *"        # 22:00 every day, in your TZ below
+timezone        = "Europe/Paris"      # CET/CEST
+max_minutes     = 480                 # wall-clock kill switch (subprocess timeout)
+# Cost guardrails for the Claude Code subprocess:
+#  - max_turns: pre-emptive coarse cap. Each "turn" is one model call.
+#    Passed to claude as --max-turns. Set to a large int or remove to disable.
+#  - max_usd:   post-hoc soft cap. After the session, total_cost_usd is read
+#    back from Claude Code's JSON output; if exceeded, the runner logs a
+#    warning, fires the notifier, and records the overage in the mall.
+# Rough Opus 4 pricing (2026-Q1): ~$15/Mtok input, ~$75/Mtok output. With
+# prompt-caching the effective input rate drops 5-10x. A typical session
+# (read brief, edit one file, run tests) costs ~$1-3.
+max_turns       = 50
+max_usd         = 5.0
+claude_code_cmd = "claude"            # path/binary
+skills_dir      = ".claude/skills"
+
+[risk]
+max_gross_exposure  = 1.0     # 100% of NAV; 2.0 with margin
+max_position_weight = 0.10    # no single position > 10% NAV
+max_daily_loss      = 0.02    # circuit-breaker at -2% intraday
+max_open_orders     = 50

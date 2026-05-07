@@ -1,0 +1,125 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hedger"
+version = "0.1.0"
+description = "Self-improving algorithmic trading bot with Claude-Code-driven reflection."
+authors = [{ name = "Thor Whalen" }]
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["trading", "algorithmic", "llm", "agentic", "claude-code"]
+
+# Un-versioned by default; pin only on known incompatibilities.
+dependencies = [
+    # Core
+    "argh",
+    "pydantic",
+    "tomli",                 # pyproject-friendly config loader
+    "typer",                 # nicer help screens; argh is still our dispatcher
+    "platformdirs",
+    # Data & numerics
+    "pandas",
+    "numpy",
+    "pyarrow",               # parquet on disk
+    "duckdb",                # zero-config analytical store
+    # Storage facade
+    "dol",                   # Mapping-based stores
+    # Market data + brokers
+    "ccxt",                  # crypto exchanges
+    "alpaca-py",             # US stocks/ETF/options/crypto
+    "yfinance",              # free historical bars for quick research
+    # Strategy / backtesting
+    "vectorbt",              # vectorised research
+    "pandas-ta",             # indicators
+    # LLM
+    "anthropic",
+    # Observability
+    "structlog",
+    "rich",
+    # Scheduling
+    "apscheduler",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "mypy",
+    "ipython",
+    "jupyterlab",
+]
+nautilus = ["nautilus_trader"]   # heavier; opt-in
+research = ["matplotlib", "plotly", "seaborn", "scikit-learn"]
+
+[project.urls]
+Homepage = "https://github.com/thorwhalen/hedger"
+Repository = "https://github.com/thorwhalen/hedger"
+Issues = "https://github.com/thorwhalen/hedger/issues"
+
+[project.scripts]
+hedger = "hedger.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["hedger*"]
+
+[tool.setuptools.package-data]
+hedger = ["misc/docs/*.md", "misc/CHANGELOG.md"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    "**/*.ipynb",
+    ".git",
+    ".venv",
+    "build",
+    "dist",
+    "tests",
+    "examples",
+    "scrap",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+# ============================================================================
+# wads CI configuration (single source of truth for the GitHub Actions workflow)
+# ============================================================================
+
+[tool.wads.ci]
+project_name = "hedger"
+
+[tool.wads.ci.testing]
+python_versions = ["3.11", "3.12"]
+pytest_args = ["-v", "--tb=short"]
+coverage_enabled = false
+exclude_paths = ["examples", "scrap"]
+test_on_windows = false
+
+[tool.wads.ci.build]
+sdist = true
+wheel = true
+
+[tool.wads.ci.publish]
+enabled = true
+
+[tool.wads.ci.quality]
+[tool.wads.ci.quality.ruff]
+enabled = false
+
+[tool.wads.ci.quality.black]
+enabled = false
+
+[tool.wads.ci.quality.mypy]
+enabled = false
+
+[tool.wads.ci.metrics]
+enabled = false
+
+[tool.wads.ci.docs]
+enabled = false
