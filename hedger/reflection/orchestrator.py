@@ -136,7 +136,7 @@ def reflect(
             notifier = LogNotifier()
 
     label = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M")
-    brief_path = write_brief(mall, out_dir=str(repo / ".hedger" / "briefs"))
+    brief_path = write_brief(mall)
     tag = snapshot(repo, label)
     log.info("reflection_start", repo=str(repo), tag=tag, brief=str(brief_path))
 

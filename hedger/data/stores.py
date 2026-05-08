@@ -273,14 +273,22 @@ class BarStore(MutableMapping):
 # ---------------------------------------------------------------------------
 
 
-def mall(root: str | Path = ".hedger") -> dict[str, MutableMapping]:
+def mall(root: str | Path | None = None) -> dict[str, MutableMapping]:
     """Return the default hedger mall: {name -> store}.
+
+    If ``root`` is None (the default), the user's hedger data directory is
+    used — see :mod:`hedger._paths`. Pass an explicit path for tests or
+    isolated runs.
 
     >>> import tempfile
     >>> m = mall(tempfile.mkdtemp())
     >>> sorted(m.keys())
     ['bars', 'decisions', 'drifts', 'fills', 'news', 'orders', 'positions', 'reflections', 'signals']
     """
+    if root is None:
+        from hedger._paths import data_dir
+
+        root = data_dir()
     root = Path(root)
     return {
         "bars": BarStore(root / "bars"),

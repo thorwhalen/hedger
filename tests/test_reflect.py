@@ -34,8 +34,12 @@ def _init_temp_git_repo() -> Path:
 
 
 @pytest.fixture
-def temp_repo():
-    return _init_temp_git_repo()
+def temp_repo(monkeypatch):
+    """Throwaway git repo with hedger paths pinned inside it for isolation."""
+    p = _init_temp_git_repo()
+    monkeypatch.setenv("HEDGER_DATA_DIR", str(p / ".hedger"))
+    monkeypatch.setenv("HEDGER_STATE_DIR", str(p / ".hedger"))
+    return p
 
 
 def _cfg(*, max_usd: float | None = 5.0, max_turns: int | None = 50) -> Config:

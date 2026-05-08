@@ -190,8 +190,16 @@ def _latest_positions_snapshot(mall: Mapping) -> dict | None:
         return None
 
 
-def write_brief(mall: Mapping, *, out_dir: str = ".hedger/briefs") -> Path:
-    """Write today's brief to disk and return the path."""
+def write_brief(mall: Mapping, *, out_dir: str | Path | None = None) -> Path:
+    """Write today's brief to disk and return the path.
+
+    Default ``out_dir`` is the user's hedger state directory under ``briefs/``.
+    Override by passing an explicit path or via ``HEDGER_STATE_DIR``.
+    """
+    if out_dir is None:
+        from hedger._paths import state_dir
+
+        out_dir = state_dir() / "briefs"
     p = Path(out_dir)
     p.mkdir(parents=True, exist_ok=True)
     brief = daily_brief(mall)

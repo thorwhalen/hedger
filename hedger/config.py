@@ -33,10 +33,9 @@ class BrokerConfig:
 
 @dataclass(frozen=True, slots=True)
 class DataConfig:
-    """Where bars come from and where they're cached."""
+    """Where bars come from. Bars persist via the mall (see ``hedger._paths``)."""
 
     primary: str = "alpaca"  # 'alpaca' | 'ccxt:kraken' | 'yfinance'
-    cache_dir: str = ".hedger/cache"
     timeframe: str = "1h"
 
 
@@ -161,10 +160,27 @@ def _coerce(d: dict[str, Any], cls):
 def load_config(path: str | Path | None = None) -> Config:
     """Load `config.toml`. Falls back to defaults if the file is missing.
 
+    Lookup order:
+
+    1. The explicit ``path`` argument.
+    2. The ``HEDGER_CONFIG`` env var.
+    3. ``./config.toml`` in the current working directory.
+    4. ``<config_dir>/config.toml`` (per-user, see :mod:`hedger._paths`).
+    5. Defaults.
+
     >>> isinstance(load_config('/nonexistent/path.toml'), Config)
     True
     """
-    p = Path(path or os.environ.get("HEDGER_CONFIG", "config.toml"))
+    if path is not None:
+        p = Path(path)
+    elif env_path := os.environ.get("HEDGER_CONFIG"):
+        p = Path(env_path)
+    else:
+        from hedger._paths import config_dir
+
+        cwd_cfg = Path("config.toml")
+        xdg_cfg = config_dir() / "config.toml"
+        p = cwd_cfg if cwd_cfg.exists() else xdg_cfg
     if not p.exists():
         return Config()
     with p.open("rb") as f:

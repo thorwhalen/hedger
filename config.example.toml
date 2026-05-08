@@ -15,7 +15,6 @@ paper  = true
 
 [data]
 primary    = "alpaca"     # "alpaca" | "yfinance" | "ccxt:kraken"
-cache_dir  = ".hedger/cache"
 timeframe  = "1h"
 
 [reflection]
