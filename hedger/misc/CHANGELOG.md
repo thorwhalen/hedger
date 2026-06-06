@@ -6,6 +6,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-06-06 — CLI guard: warn when ambient env shadows the envfile
+
+**Why:** `load_envfile_into_environ()` is `override=False`, so an `ALPACA_API_KEY`
+exported in the shell silently wins over `/etc/hedger.env`. In practice this made
+`hedger status` report a *different* Alpaca paper account than the one `hedger serve`
+actually trades (the shell's `ALPACA_*` pointed at a second account on the same box).
+
+**Change:** added `install.warn_if_ambient_shadows_envfile()`, called from
+`__main__.main()` before the envfile load. It prints a stderr warning (with last-4
+fingerprints only — no secret leak) listing the mismatched keys and the
+`env -u ... hedger <cmd>` fix. No behaviour change to the loader itself. Tests added
+in `tests/test_install.py`; `pytest -q` green.
+
+---
+
 ## 2026-05-07 — Public release: qbot → hedger v0.1.0
 
 The codebase moved from the private `tt/p_fin/qbot/` sandbox into its own
