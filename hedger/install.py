@@ -329,7 +329,57 @@ def load_envfile_into_environ(path: str | os.PathLike | None = None) -> dict[str
     return applied
 
 
+#: Keys whose mismatch between ambient env and envfile means the CLI would
+#: authenticate against a *different* account than the systemd service.
+_ACCOUNT_IDENTITY_KEYS: tuple[str, ...] = ("ALPACA_API_KEY", "ALPACA_SECRET_KEY")
+
+
+def warn_if_ambient_shadows_envfile(
+    path: str | os.PathLike | None = None,
+    *,
+    keys: tuple[str, ...] = _ACCOUNT_IDENTITY_KEYS,
+) -> bool:
+    """Warn on stderr when ambient env vars shadow the envfile's credentials.
+
+    :func:`load_envfile_into_environ` never overrides a pre-existing env var, so
+    an ``ALPACA_API_KEY`` exported in the shell silently wins over the envfile —
+    meaning ``hedger status`` (and every other CLI call) can report a *different*
+    Alpaca account than the one the running ``hedger serve`` service trades. This
+    has bitten us. Detect it and say so loudly, without leaking the secret.
+
+    Returns ``True`` when a shadowing mismatch was found (and warned about).
+    """
+    target = resolve_envfile(path)
+    if not target.is_file():
+        return False
+    parsed = _parse_envfile(target.read_text())
+    shadowed = [
+        k for k in keys if k in parsed and k in os.environ and os.environ[k] != parsed[k]
+    ]
+    if not shadowed:
+        return False
+
+    def _tail(v: str) -> str:  # last 4 chars: enough to disambiguate, not leak
+        return f"…{v[-4:]}" if len(v) > 4 else "…"
+
+    sys.stderr.write(
+        f"hedger: WARNING: ambient environment is shadowing the envfile ({target}). "
+        "The CLI is using exported credentials, NOT the envfile, so it may be "
+        "talking to a DIFFERENT Alpaca account than `hedger serve`.\n"
+    )
+    for k in shadowed:
+        sys.stderr.write(
+            f"hedger:   {k}: shell={_tail(os.environ[k])}  envfile={_tail(parsed[k])}\n"
+        )
+    sys.stderr.write(
+        "hedger:   To use the envfile's account, unset the ambient vars, e.g.: "
+        f"env -u {' -u '.join(shadowed)} hedger <command>\n"
+    )
+    return True
+
+
 __all__ = [
+    "warn_if_ambient_shadows_envfile",
     "install",
     "where_keys",
     "is_secret_key_name",

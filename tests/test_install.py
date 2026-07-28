@@ -14,6 +14,7 @@ from hedger.install import (
     install,
     is_secret_key_name,
     load_envfile_into_environ,
+    warn_if_ambient_shadows_envfile,
     where_keys,
 )
 
@@ -121,6 +122,29 @@ def test_install_warns_about_missing_keys_in_next_steps(tmp_path: Path):
     assert "missing:" in out
     for name in KNOWN_SECRETS:
         assert name in out
+
+
+def test_ambient_shadow_warns_on_mismatch(tmp_path: Path, monkeypatch, capsys):
+    env = tmp_path / "hedger.env"
+    env.write_text("ALPACA_API_KEY=file-key-3LC4\nALPACA_SECRET_KEY=file-sec-EMHA\n")
+    monkeypatch.setenv("ALPACA_API_KEY", "shell-key-PY4Z")  # differs -> shadows
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "file-sec-EMHA")  # same -> not flagged
+    assert warn_if_ambient_shadows_envfile(str(env)) is True
+    err = capsys.readouterr().err
+    assert "shadowing the envfile" in err
+    assert "ALPACA_API_KEY" in err
+    assert "ALPACA_SECRET_KEY" not in err  # matching key must not be reported
+    assert "…PY4Z" in err  # last-4 fingerprint shown to disambiguate
+    assert "shell-key-PY4Z" not in err  # but the full secret never leaks
+
+
+def test_ambient_shadow_silent_when_matching_or_unset(tmp_path: Path, monkeypatch, capsys):
+    env = tmp_path / "hedger.env"
+    env.write_text("ALPACA_API_KEY=k\nALPACA_SECRET_KEY=s\n")
+    monkeypatch.delenv("ALPACA_API_KEY", raising=False)
+    monkeypatch.delenv("ALPACA_SECRET_KEY", raising=False)
+    assert warn_if_ambient_shadows_envfile(str(env)) is False
+    assert capsys.readouterr().err == ""
 
 
 def test_default_editor_is_pico(tmp_path: Path, monkeypatch):

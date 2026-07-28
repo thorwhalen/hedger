@@ -37,8 +37,14 @@ def main():
     # Auto-load hedger's canonical envfile into os.environ (override=False) so
     # interactive CLI use mirrors the systemd EnvironmentFile= behaviour. Only
     # happens on CLI invocation, never on `import hedger`.
-    from hedger.install import load_envfile_into_environ
+    from hedger.install import (
+        load_envfile_into_environ,
+        warn_if_ambient_shadows_envfile,
+    )
 
+    # Warn BEFORE loading: load is override=False, so any ambient ALPACA_* vars
+    # win and could point the CLI at a different account than `hedger serve`.
+    warn_if_ambient_shadows_envfile()
     load_envfile_into_environ()
 
     from hedger.tools import _dispatch_funcs as tools_funcs
