@@ -15,6 +15,7 @@ to brokers. Composition with sizers/risk/brokers happens in the runner.
 from hedger.base import Bar, Signal, Symbol
 from hedger.strategies import register
 
+
 @register("my_strategy_name")
 def my_strategy(
     bars: Mapping[Symbol, Iterable[Bar]],
@@ -28,8 +29,9 @@ def my_strategy(
     for symbol, bar_iter in bars.items():
         ...
         yield Signal(
-            symbol=symbol, ts=last_bar.ts,
-            score=...,                           # in [-1, 1]
+            symbol=symbol,
+            ts=last_bar.ts,
+            score=...,  # in [-1, 1]
             strategy="my_strategy_name",
             meta={"reason": "...", "lookback": lookback},
         )

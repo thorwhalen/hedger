@@ -54,6 +54,7 @@ SDK: just pass them positionally.
 
 ```python
 from alpaca.trading.client import TradingClient
+
 trading = TradingClient(api_key, secret_key, paper=True)
 ```
 
@@ -99,7 +100,7 @@ print(account.buying_power, account.equity, account.pattern_day_trader)
 order = trading.submit_order(
     MarketOrderRequest(
         symbol="SPY",
-        qty=0.5,                   # fractional via non-integer qty
+        qty=0.5,  # fractional via non-integer qty
         side=OrderSide.BUY,
         time_in_force=TimeInForce.DAY,
     )
@@ -109,7 +110,7 @@ order = trading.submit_order(
 order = trading.submit_order(
     MarketOrderRequest(
         symbol="SPY",
-        notional=200,              # buy $200 worth
+        notional=200,  # buy $200 worth
         side=OrderSide.BUY,
         time_in_force=TimeInForce.DAY,
     )
@@ -128,12 +129,14 @@ from alpaca.data.timeframe import TimeFrame
 from datetime import datetime
 
 data = StockHistoricalDataClient(api_key, secret_key)
-bars = data.get_stock_bars(StockBarsRequest(
-    symbol_or_symbols=["SPY", "QQQ"],
-    timeframe=TimeFrame.Hour,
-    start=datetime(2024, 1, 1),
-    end=datetime(2024, 6, 1),
-)).df  # multi-index pandas DataFrame
+bars = data.get_stock_bars(
+    StockBarsRequest(
+        symbol_or_symbols=["SPY", "QQQ"],
+        timeframe=TimeFrame.Hour,
+        start=datetime(2024, 1, 1),
+        end=datetime(2024, 6, 1),
+    )
+).df  # multi-index pandas DataFrame
 ```
 
 ### Crypto historical bars (no keys)
@@ -143,11 +146,17 @@ from alpaca.data.historical import CryptoHistoricalDataClient
 from alpaca.data.requests import CryptoBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
-bars = CryptoHistoricalDataClient().get_crypto_bars(CryptoBarsRequest(
-    symbol_or_symbols=["BTC/USD", "ETH/USD"],
-    timeframe=TimeFrame.Day,
-    start=datetime(2024, 1, 1),
-)).df
+bars = (
+    CryptoHistoricalDataClient()
+    .get_crypto_bars(
+        CryptoBarsRequest(
+            symbol_or_symbols=["BTC/USD", "ETH/USD"],
+            timeframe=TimeFrame.Day,
+            start=datetime(2024, 1, 1),
+        )
+    )
+    .df
+)
 ```
 
 Crypto symbols use `BASE/QUOTE` (slash, not hyphen).
@@ -159,9 +168,11 @@ from alpaca.trading.stream import TradingStream
 
 stream = TradingStream(api_key, secret_key, paper=True)
 
+
 async def handle(data):
     # data.event in {'new', 'fill', 'partial_fill', 'canceled', 'rejected', ...}
     print(data)
+
 
 stream.subscribe_trade_updates(handle)
 stream.run()
@@ -174,8 +185,10 @@ from alpaca.data.live import StockDataStream
 
 stream = StockDataStream(api_key, secret_key)
 
+
 async def on_bar(bar):
     print(bar.symbol, bar.close)
+
 
 stream.subscribe_bars(on_bar, "SPY", "QQQ")
 stream.run()

@@ -167,9 +167,9 @@ def donchian_breakout(bars, *, context=None, fast=20, slow=55, atr_window=14):
         if len(w) < slow + 1:
             continue
         upper = max(b.high for b in w[-fast:-1])
-        lower = min(b.low  for b in w[-fast:-1])
-        atr   = _atr(w[-atr_window:])
-        c     = w[-1].close
+        lower = min(b.low for b in w[-fast:-1])
+        atr = _atr(w[-atr_window:])
+        c = w[-1].close
         if atr == 0:
             continue
         if c > upper:
@@ -178,9 +178,13 @@ def donchian_breakout(bars, *, context=None, fast=20, slow=55, atr_window=14):
             score = -math.tanh((lower - c) / atr)
         else:
             continue
-        yield Signal(symbol=symbol, ts=w[-1].ts, score=score,
-                     strategy="donchian_breakout",
-                     meta={"upper": upper, "lower": lower, "atr": atr})
+        yield Signal(
+            symbol=symbol,
+            ts=w[-1].ts,
+            score=score,
+            strategy="donchian_breakout",
+            meta={"upper": upper, "lower": lower, "atr": atr},
+        )
 ```
 
 - **Score map**: `tanh((close − channel) / ATR)`.
@@ -198,17 +202,21 @@ def bollinger_meanrev(bars, *, context=None, window=20, n_std=2.0, rsi_filter=14
         if len(w) < window + 1:
             continue
         closes = np.array([b.close for b in w])
-        mean   = closes[-window:].mean()
-        std    = closes[-window:].std(ddof=1)
+        mean = closes[-window:].mean()
+        std = closes[-window:].std(ddof=1)
         if std == 0:
             continue
         z = (closes[-1] - mean) / std
         if abs(z) < n_std:
             continue
-        score = float(-np.tanh(z / n_std))   # contrarian
-        yield Signal(symbol=symbol, ts=w[-1].ts, score=score,
-                     strategy="bollinger_meanrev",
-                     meta={"z": z, "mean": mean, "std": std})
+        score = float(-np.tanh(z / n_std))  # contrarian
+        yield Signal(
+            symbol=symbol,
+            ts=w[-1].ts,
+            score=score,
+            strategy="bollinger_meanrev",
+            meta={"z": z, "mean": mean, "std": std},
+        )
 ```
 
 - **Score map**: `-tanh(z / n_std)`. **Sweep**: `window ∈ {10, 20, 50}`, `n_std ∈ {1.5, 2.0, 2.5}`.
@@ -218,9 +226,9 @@ def bollinger_meanrev(bars, *, context=None, window=20, n_std=2.0, rsi_filter=14
 
 ```python
 @register("xs_momentum")
-def xs_momentum(bars, *, context=None,
-                formation_bars=252, skip_bars=21,
-                top_quantile=0.2, bottom_quantile=0.2):
+def xs_momentum(
+    bars, *, context=None, formation_bars=252, skip_bars=21, top_quantile=0.2, bottom_quantile=0.2
+):
     """Rank universe by past return (skip-1m). Long top quantile, short bottom."""
     rets = {}
     for symbol, w in bars.items():
@@ -228,7 +236,7 @@ def xs_momentum(bars, *, context=None,
         if len(w) < formation_bars + skip_bars + 1:
             continue
         c_then = w[-(formation_bars + skip_bars)].close
-        c_now  = w[-skip_bars - 1].close
+        c_now = w[-skip_bars - 1].close
         rets[symbol] = (c_now / c_then) - 1.0
     if len(rets) < 5:
         return
@@ -239,11 +247,21 @@ def xs_momentum(bars, *, context=None,
     losers, winners = dict(ranked[:n_bot]), dict(ranked[-n_top:])
     ts = list(next(iter(bars.values())))[-1].ts
     for sym in winners:
-        yield Signal(symbol=sym, ts=ts, score=+1.0, strategy="xs_momentum",
-                     meta={"ret_form": winners[sym], "side": "winner"})
+        yield Signal(
+            symbol=sym,
+            ts=ts,
+            score=+1.0,
+            strategy="xs_momentum",
+            meta={"ret_form": winners[sym], "side": "winner"},
+        )
     for sym in losers:
-        yield Signal(symbol=sym, ts=ts, score=-1.0, strategy="xs_momentum",
-                     meta={"ret_form": losers[sym], "side": "loser"})
+        yield Signal(
+            symbol=sym,
+            ts=ts,
+            score=-1.0,
+            strategy="xs_momentum",
+            meta={"ret_form": losers[sym], "side": "loser"},
+        )
 ```
 
 - **Score map**: binary ±1 on the tails; continuous variant uses `tanh` of the cross-sectional z-score of formation returns.
@@ -258,7 +276,7 @@ def pairs_zscore(bars, *, context=None, lookback=120, entry_z=2.0, exit_z=0.5):
     """For each (a, b, beta) in context['pairs']: spread = a - beta*b;
     z-score it; long-cheap-leg / short-rich-leg when |z| > entry_z."""
     pairs = (context or {}).get("pairs", [])
-    for (sym_a, sym_b, beta) in pairs:
+    for sym_a, sym_b, beta in pairs:
         w_a = list(bars.get(sym_a, []))
         w_b = list(bars.get(sym_b, []))
         if len(w_a) < lookback or len(w_b) < lookback:
@@ -272,10 +290,20 @@ def pairs_zscore(bars, *, context=None, lookback=120, entry_z=2.0, exit_z=0.5):
         score_a = float(-np.tanh(z / entry_z))
         score_b = -score_a
         ts = w_a[-1].ts
-        yield Signal(symbol=sym_a, ts=ts, score=score_a, strategy="pairs_zscore",
-                     meta={"z": z, "pair": (sym_a.ticker, sym_b.ticker), "leg": "A"})
-        yield Signal(symbol=sym_b, ts=ts, score=score_b, strategy="pairs_zscore",
-                     meta={"z": z, "pair": (sym_a.ticker, sym_b.ticker), "leg": "B"})
+        yield Signal(
+            symbol=sym_a,
+            ts=ts,
+            score=score_a,
+            strategy="pairs_zscore",
+            meta={"z": z, "pair": (sym_a.ticker, sym_b.ticker), "leg": "A"},
+        )
+        yield Signal(
+            symbol=sym_b,
+            ts=ts,
+            score=score_b,
+            strategy="pairs_zscore",
+            meta={"z": z, "pair": (sym_a.ticker, sym_b.ticker), "leg": "B"},
+        )
 ```
 
 - **Score map**: `-tanh(z / entry_z)` for the cheap leg; opposite for the rich leg.
@@ -286,9 +314,7 @@ def pairs_zscore(bars, *, context=None, lookback=120, entry_z=2.0, exit_z=0.5):
 
 ```python
 @register("pca_residual_revert")
-def pca_residual_revert(bars, *, context=None,
-                        lookback=60, n_factors=5,
-                        entry_z=1.25, exit_z=0.5):
+def pca_residual_revert(bars, *, context=None, lookback=60, n_factors=5, entry_z=1.25, exit_z=0.5):
     """PCA on universe returns → top-k factors. For each name, residualise vs factors,
     treat cumulative residual as OU; signal = -z(cum_residual)."""
     rets = _aligned_returns(bars, lookback)
@@ -301,14 +327,18 @@ def pca_residual_revert(bars, *, context=None,
     for i, sym in enumerate(_universe(bars)):
         beta, *_ = np.linalg.lstsq(factor_rets, rets[:, i], rcond=None)
         resid = rets[:, i] - factor_rets @ beta
-        cum   = np.cumsum(resid)
+        cum = np.cumsum(resid)
         z = (cum[-1] - cum.mean()) / cum.std(ddof=1)
         if abs(z) < entry_z:
             continue
         score = float(-np.tanh(z / entry_z))
-        yield Signal(symbol=sym, ts=_last_ts(bars, sym), score=score,
-                     strategy="pca_residual_revert",
-                     meta={"z": z, "n_factors": n_factors})
+        yield Signal(
+            symbol=sym,
+            ts=_last_ts(bars, sym),
+            score=score,
+            strategy="pca_residual_revert",
+            meta={"z": z, "n_factors": n_factors},
+        )
 ```
 
 - **Sweep**: `lookback ∈ {30, 60, 90}`, `n_factors ∈ {3, 5, 7, 10}`, `entry_z ∈ {1.0, 1.25, 1.5}`.
@@ -320,8 +350,7 @@ Requires earnings via `context["earnings"]`.
 
 ```python
 @register("pead_drift")
-def pead_drift(bars, *, context=None,
-               drift_window_bars=60, sue_threshold=1.0):
+def pead_drift(bars, *, context=None, drift_window_bars=60, sue_threshold=1.0):
     """Long names that beat earnings (SUE > +threshold), short those that missed,
     hold for drift_window_bars after announcement; magnitude decays linearly."""
     earnings = (context or {}).get("earnings", {})
@@ -338,10 +367,13 @@ def pead_drift(bars, *, context=None,
             continue
         score = float(np.tanh(sue / 3.0))
         decay = 1.0 - bars_since / drift_window_bars
-        yield Signal(symbol=sym, ts=list(w)[-1].ts, score=score * decay,
-                     strategy="pead_drift",
-                     meta={"sue": sue, "bars_since": bars_since,
-                           "event_ts": last_event["ts"]})
+        yield Signal(
+            symbol=sym,
+            ts=list(w)[-1].ts,
+            score=score * decay,
+            strategy="pead_drift",
+            meta={"sue": sue, "bars_since": bars_since, "event_ts": last_event["ts"]},
+        )
 ```
 
 - **Score map**: `tanh(SUE / 3) × (1 − bars_since/drift_window)`.
@@ -351,30 +383,39 @@ def pead_drift(bars, *, context=None,
 
 ```python
 @register("news_sentiment")
-def news_sentiment(bars, *, context=None,
-                   lookback_hours=24, min_articles=2,
-                   decay_half_life_hours=6.0):
+def news_sentiment(
+    bars, *, context=None, lookback_hours=24, min_articles=2, decay_half_life_hours=6.0
+):
     """Aggregate FinBERT polarity over recent headlines; emit a Signal proportional to
     time-decayed average sentiment, gated by article-count threshold."""
     news = (context or {}).get("news", {})
-    sm   = (context or {}).get("sentiment_model")
+    sm = (context or {}).get("sentiment_model")
     for sym, w in bars.items():
         ts_now = list(w)[-1].ts
-        items = [n for n in news.get(sym, [])
-                 if (ts_now - n["ts"]).total_seconds() / 3600 <= lookback_hours]
+        items = [
+            n
+            for n in news.get(sym, [])
+            if (ts_now - n["ts"]).total_seconds() / 3600 <= lookback_hours
+        ]
         if len(items) < min_articles:
             continue
         polarities = [n.get("polarity") or sm(n["headline"]) for n in items]
-        weights = [0.5 ** ((ts_now - n["ts"]).total_seconds() / 3600 / decay_half_life_hours)
-                   for n in items]
+        weights = [
+            0.5 ** ((ts_now - n["ts"]).total_seconds() / 3600 / decay_half_life_hours)
+            for n in items
+        ]
         wsum = sum(weights)
         if wsum == 0:
             continue
         avg = sum(p * wt for p, wt in zip(polarities, weights)) / wsum
         score = float(np.tanh(avg * 2))
-        yield Signal(symbol=sym, ts=ts_now, score=score,
-                     strategy="news_sentiment",
-                     meta={"n_articles": len(items), "avg_polarity": avg})
+        yield Signal(
+            symbol=sym,
+            ts=ts_now,
+            score=score,
+            strategy="news_sentiment",
+            meta={"n_articles": len(items), "avg_polarity": avg},
+        )
 ```
 
 - **Score map**: `tanh(2 × weighted_avg_polarity)`.
@@ -386,9 +427,15 @@ A scaled-down multi-agent strategy: one batched call per universe per bar; struc
 
 ```python
 @register("llm_committee")
-def llm_committee(bars, *, context=None,
-                  universe_max=30, cache_key_fn=None,
-                  llm_client=None, model_name="claude-haiku-4.5"):
+def llm_committee(
+    bars,
+    *,
+    context=None,
+    universe_max=30,
+    cache_key_fn=None,
+    llm_client=None,
+    model_name="claude-haiku-4.5",
+):
     """One batched call per (date, symbol_set, news_hash); structured-JSON response
     yields {ticker -> {score: [-1, 1], rationale: str}}."""
     news = (context or {}).get("news", {})
@@ -408,10 +455,17 @@ def llm_committee(bars, *, context=None,
         if v is None:
             continue
         score = max(-1.0, min(1.0, float(v["score"])))
-        yield Signal(symbol=symbol, ts=w[-1].ts, score=score,
-                     strategy="llm_committee",
-                     meta={"rationale": v.get("rationale", "")[:200],
-                           "model": model_name, "cache_hit": cached is not None})
+        yield Signal(
+            symbol=symbol,
+            ts=w[-1].ts,
+            score=score,
+            strategy="llm_committee",
+            meta={
+                "rationale": v.get("rationale", "")[:200],
+                "model": model_name,
+                "cache_hit": cached is not None,
+            },
+        )
 ```
 
 - **Cost discipline (critical)**: at GPT-4o (~$2.50/$10 per million tokens, April 2026) and Claude Sonnet 4.6 (~$3/$15), a single batched committee call over 30 symbols with ~10K input + 2K output tokens costs about $0.045 (GPT-4o) or about $0.06 (Sonnet). At 4h cadence ≈ 6 calls/day → about $0.30–0.40/day. Default to **Haiku 4.5** ($1/$5) for routine calls; reserve Sonnet/Opus for end-of-week reflection. Cache by `(date, symbol_set, news_hash)`.
@@ -458,10 +512,15 @@ Maintainer Oleg Polakov (polakowo). **License**: Apache 2.0 with Commons Clause 
 def alpha158_lgbm(bars, *, context=None, model_path="alpha158_lgbm.pkl"):
     model = (context or {}).get("alpha_model") or _load_model(model_path)
     for sym, w in bars.items():
-        feats = _extract_alpha158_features(w)   # mirror qlib feature extraction
+        feats = _extract_alpha158_features(w)  # mirror qlib feature extraction
         score = float(np.tanh(model.predict(feats)[-1]))
-        yield Signal(symbol=sym, ts=list(w)[-1].ts, score=score,
-                     strategy="alpha158_lgbm", meta={"model_version": model_path})
+        yield Signal(
+            symbol=sym,
+            ts=list(w)[-1].ts,
+            score=score,
+            strategy="alpha158_lgbm",
+            meta={"model_version": model_path},
+        )
 ```
 
 **Verify exact feature-extraction APIs against the qlib docs** — they have evolved.

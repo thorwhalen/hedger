@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hedger"
-version = "0.1.5"
+version = "0.1.6"
 description = "Self-improving algorithmic trading bot with Claude-Code-driven reflection."
 authors = [{ name = "Thor Whalen" }]
 readme = "README.md"

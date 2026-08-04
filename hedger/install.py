@@ -353,9 +353,7 @@ def warn_if_ambient_shadows_envfile(
     if not target.is_file():
         return False
     parsed = _parse_envfile(target.read_text())
-    shadowed = [
-        k for k in keys if k in parsed and k in os.environ and os.environ[k] != parsed[k]
-    ]
+    shadowed = [k for k in keys if k in parsed and k in os.environ and os.environ[k] != parsed[k]]
     if not shadowed:
         return False
 

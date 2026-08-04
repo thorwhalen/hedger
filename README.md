@@ -236,14 +236,17 @@ from datetime import datetime, timedelta, timezone
 src = make_source("alpaca")
 end = datetime.now(timezone.utc) - timedelta(minutes=20)
 start = end - timedelta(days=400)
-bars = {Symbol(t, AssetClass.EQUITY): list(src.bars(
-    Symbol(t, AssetClass.EQUITY), start=start, end=end, timeframe="1d"
-)) for t in ("SPY", "QQQ")}
+bars = {
+    Symbol(t, AssetClass.EQUITY): list(
+        src.bars(Symbol(t, AssetClass.EQUITY), start=start, end=end, timeframe="1d")
+    )
+    for t in ("SPY", "QQQ")
+}
 
-df = param_sweep(sma_crossover,
-                 {"fast": [5, 10, 20, 30], "slow": [50, 100, 150]},
-                 bars, max_workers=4)
-print(df.head())   # sorted by sharpe desc
+df = param_sweep(
+    sma_crossover, {"fast": [5, 10, 20, 30], "slow": [50, 100, 150]}, bars, max_workers=4
+)
+print(df.head())  # sorted by sharpe desc
 ```
 
 ---
