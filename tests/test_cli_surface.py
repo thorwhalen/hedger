@@ -11,6 +11,7 @@ dispatches. That is the right thing for an interactive CLI and the wrong thing
 for a test, and the parser it then builds is the same one either way.
 """
 
+import os
 import subprocess
 import sys
 
@@ -43,13 +44,20 @@ def parser():
     return cw.mk_parser(_dispatch_funcs)
 
 
+#: Pins that make recorded text reproducible. Merged ONTO ``os.environ``, never
+#: substituted for it: a replaced environment loses ``SYSTEMROOT`` on Windows and
+#: the child interpreter dies in ``_Py_HashRandomization_Init`` before it runs a
+#: line of our code.
+ENV_PINS = {"COLUMNS": "100", "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+
+
 def run_cli(*argv):
     """Run ``python -m hedger.tools`` in a subprocess and return the result."""
     return subprocess.run(
         [sys.executable, "-m", "hedger.tools", *argv],
         capture_output=True,
         text=True,
-        env={"COLUMNS": "100", "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
+        env=dict(os.environ, **ENV_PINS),
         timeout=300,
     )
 
