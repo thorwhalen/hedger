@@ -134,7 +134,7 @@ hedger/
   reflection/
     monitor.py         ← daily_brief()
     orchestrator.py    ← reflect()
-  tools.py             ← CLI commands (argh-dispatched)
+  tools.py             ← CLI commands (cw-dispatched)
   __main__.py          ← `hedger ...` entry point
 .claude/
   skills/              ← reflection-cycle, strategy-development, data-pipeline

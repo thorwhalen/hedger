@@ -47,7 +47,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-The install pulls in everything you need to run paper trading and the LLM-news strategy: `alpaca-py`, `anthropic`, `pandas`, `pyarrow`, `apscheduler`, `structlog`, `argh`, `vectorbt`, `ccxt`, `yfinance`. Heavy / optional groups:
+The install pulls in everything you need to run paper trading and the LLM-news strategy: `alpaca-py`, `anthropic`, `pandas`, `pyarrow`, `apscheduler`, `structlog`, `cw`, `vectorbt`, `ccxt`, `yfinance`. Heavy / optional groups:
 
 ```bash
 pip install -e '.[dev]'         # pytest, ruff, mypy, ipython, jupyterlab
