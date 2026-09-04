@@ -15,10 +15,10 @@ keywords = ["trading", "algorithmic", "llm", "agentic", "claude-code"]
 # Un-versioned by default; pin only on known incompatibilities.
 dependencies = [
     # Core
-    "argh",
+    "cw",                    # CLI dispatch (MIT, zero runtime deps; argh's grammar)
     "pydantic",
     "tomli",                 # pyproject-friendly config loader
-    "typer",                 # nicer help screens; argh is still our dispatcher
+    "typer",                 # nicer help screens; cw is our dispatcher
     "platformdirs",
     # Data & numerics
     "pandas",

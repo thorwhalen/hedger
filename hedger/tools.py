@@ -1,7 +1,7 @@
 """User-facing CLI commands (dispatched by `__main__.py`).
 
 Each of these is a thin function over the package surface, suitable for
-argh dispatch. Add a new command by writing a function and appending it
+`cw` dispatch. Add a new command by writing a function and appending it
 to `_dispatch_funcs`.
 """
 
@@ -209,7 +209,7 @@ def status(*, config: str | None = None, broker: str | None = None) -> str:
     return json.dumps(out, indent=2, default=str)
 
 
-# Aliases so argh exposes them as `hedger install` / `hedger where-keys`
+# Aliases so the CLI exposes them as `hedger install` / `hedger where-keys`
 # without the importer-name collision (`install` would shadow the symbol).
 def install(
     *, systemd: bool = False, envfile: str | None = None, workdir: str | None = None
@@ -240,6 +240,6 @@ _dispatch_funcs = [
 
 
 if __name__ == "__main__":
-    import argh
+    import cw
 
-    argh.dispatch_commands(_dispatch_funcs)
+    raise SystemExit(cw.dispatch(_dispatch_funcs))

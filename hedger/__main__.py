@@ -8,29 +8,11 @@
     hedger serve                           # block forever; runs reflection too
     hedger reflect --dry-run               # run reflection now
 
-Following Thor's package architecture conventions: `argh` for dispatch,
-namespaced sub-commands ("tools" namespace) for module-level helpers.
+Following Thor's package architecture conventions: `cw` for dispatch, with
+`hedger/tools.py::_dispatch_funcs` as the SSOT for what the CLI exposes.
 """
 
 from __future__ import annotations
-
-
-def dispatch_with_namespaces(functions, namespaced_funcs=None):
-    """argh dispatch helper with optional namespaces and tab-completion."""
-    import argh
-
-    parser = argh.ArghParser()
-    parser.add_commands(functions)
-    if namespaced_funcs:
-        for namespace, funcs in namespaced_funcs.items():
-            parser.add_commands(funcs, namespace=namespace)
-    try:
-        import argcomplete
-
-        argcomplete.autocomplete(parser)
-    except ImportError:
-        pass
-    parser.dispatch()
 
 
 def main():
@@ -47,9 +29,16 @@ def main():
     warn_if_ambient_shadows_envfile()
     load_envfile_into_environ()
 
+    import cw
+
     from hedger.tools import _dispatch_funcs as tools_funcs
 
-    dispatch_with_namespaces(tools_funcs)
+    # cw.mk_parser + cw.run rather than cw.dispatch, because this used to be a
+    # hand-built ArghParser. cw.run is what fires argcomplete (mk_parser does
+    # not), which is why the hand-written `try: import argcomplete` block that
+    # used to live here could simply be deleted rather than ported.
+    parser = cw.mk_parser(tools_funcs)
+    raise SystemExit(cw.run(parser))
 
 
 if __name__ == "__main__":
