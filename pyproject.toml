@@ -15,7 +15,10 @@ keywords = ["trading", "algorithmic", "llm", "agentic", "claude-code"]
 # Un-versioned by default; pin only on known incompatibilities.
 dependencies = [
     # Core
-    "cw",                    # CLI dispatch (MIT, zero runtime deps; argh's grammar)
+    # Pinned, per the rule above: cw is pre-1.0 and its own ADR-0005 states that
+    # 0.2 is where the grammar may move. That is a known incompatibility, not a
+    # hypothetical one, and the CLI is the whole of hedger's operator surface.
+    "cw>=0.1.1,<0.2",        # CLI dispatch (MIT, zero runtime deps; argh's grammar)
     "pydantic",
     "tomli",                 # pyproject-friendly config loader
     "typer",                 # nicer help screens; cw is our dispatcher
