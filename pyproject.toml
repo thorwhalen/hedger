@@ -111,7 +111,10 @@ exclude = [
 select = []
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# wads CI runs `pytest --doctest-modules` with NO path argument, so collection is
+# driven entirely by `testpaths`. The package dir must be listed here or none of
+# its doctests ever run. Guarded by tests/test_doctest_collection.py.
+testpaths = ["tests", "hedger"]
 addopts = "-q"
 
 # ============================================================================
