@@ -131,6 +131,59 @@ def _alpaca_to_asset_class(raw: str) -> AssetClass:
     return AssetClass.EQUITY
 
 
+# Quote currencies Alpaca uses for crypto pairs. Checked in this order so the
+# longer stablecoin quotes win over the plain "USD" suffix they end with.
+_CRYPTO_QUOTE_CURRENCIES: tuple[str, ...] = ("USDT", "USDC", "USD", "BTC")
+
+
+def normalize_crypto_ticker(ticker: str) -> str:
+    """Return a crypto ticker in hedger's canonical ``BASE/QUOTE`` pair form.
+
+    Alpaca is inconsistent about crypto symbols: orders, fills and bars use
+    the pair form (``BTC/USD``) while ``get_all_positions()`` returns the
+    concatenated form (``BTCUSD``). hedger's universe, bar cache and
+    decisions all use the pair form, so a position keyed ``BTCUSD`` never
+    matched the ``BTC/USD`` decision and the runner believed it held nothing.
+    That is how the bot bought 10% of NAV in BTC every hour on 2026-05-09
+    until buying power ran out. Already-normalised tickers and tickers with
+    an unknown quote currency pass through unchanged.
+
+    >>> normalize_crypto_ticker("BTCUSD")
+    'BTC/USD'
+    >>> normalize_crypto_ticker("ETHUSDT")
+    'ETH/USDT'
+    >>> normalize_crypto_ticker("BTC/USD")
+    'BTC/USD'
+    >>> normalize_crypto_ticker("SPY")
+    'SPY'
+    """
+    if "/" in ticker:
+        return ticker
+    for quote in _CRYPTO_QUOTE_CURRENCIES:
+        if ticker.endswith(quote) and len(ticker) > len(quote):
+            return f"{ticker[: -len(quote)]}/{quote}"
+    return ticker
+
+
+def _symbol_from_alpaca(raw_symbol: str, raw_asset_class: str) -> Symbol:
+    """Build a hedger :class:`Symbol` from Alpaca's ``symbol`` + ``asset_class``.
+
+    Crypto tickers are normalised with :func:`normalize_crypto_ticker` so the
+    broker's positions and fills use the same key as the runner's universe;
+    everything else passes through untouched.
+
+    >>> str(_symbol_from_alpaca("BTCUSD", "crypto"))
+    'default:BTC/USD'
+    >>> str(_symbol_from_alpaca("SPY", "us_equity"))
+    'default:SPY'
+    """
+    asset_class = _alpaca_to_asset_class(raw_asset_class)
+    ticker = raw_symbol
+    if asset_class is AssetClass.CRYPTO:
+        ticker = normalize_crypto_ticker(raw_symbol)
+    return Symbol(ticker=ticker, asset_class=asset_class)
+
+
 @dataclass
 class AlpacaBroker:
     """Live or paper Alpaca via the official SDK.
@@ -275,10 +328,7 @@ class AlpacaBroker:
                 self._fill_watermark = ts
             yield Fill(
                 order_id=str(o.id),
-                symbol=Symbol(
-                    ticker=o.symbol,
-                    asset_class=_alpaca_to_asset_class(getattr(o, "asset_class", "")),
-                ),
+                symbol=_symbol_from_alpaca(o.symbol, getattr(o, "asset_class", "")),
                 side=Side.BUY if str(o.side).lower().endswith("buy") else Side.SELL,
                 qty=float(o.filled_qty),
                 price=float(o.filled_avg_price or 0.0),
@@ -329,10 +379,7 @@ class AlpacaBroker:
             order = getattr(data, "order", None)
             if order is None:
                 return
-            sym = Symbol(
-                ticker=order.symbol,
-                asset_class=_alpaca_to_asset_class(getattr(order, "asset_class", "")),
-            )
+            sym = _symbol_from_alpaca(order.symbol, getattr(order, "asset_class", ""))
             fill = Fill(
                 order_id=str(order.id),
                 symbol=sym,
@@ -404,10 +451,9 @@ class AlpacaBroker:
     def positions(self) -> Mapping[Symbol, Position]:
         out: dict[Symbol, Position] = {}
         for p in self._client.get_all_positions():
-            sym = Symbol(
-                ticker=p.symbol,
-                asset_class=_alpaca_to_asset_class(getattr(p, "asset_class", "")),
-            )
+            # Alpaca reports crypto positions as "BTCUSD"; normalise to the
+            # "BTC/USD" form the runner's universe and decisions use.
+            sym = _symbol_from_alpaca(p.symbol, getattr(p, "asset_class", ""))
             out[sym] = Position(
                 symbol=sym,
                 qty=float(p.qty),
@@ -445,4 +491,4 @@ def make_broker(spec: str = "alpaca:paper", **kwargs) -> Broker:
     raise ValueError(f"Unknown broker spec: {spec!r}")
 
 
-__all__ = ["PaperBroker", "AlpacaBroker", "make_broker"]
+__all__ = ["PaperBroker", "AlpacaBroker", "make_broker", "normalize_crypto_ticker"]

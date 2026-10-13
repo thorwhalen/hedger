@@ -20,7 +20,12 @@ from hedger.base import (
     Symbol,
     TimeInForce,
 )
-from hedger.execution.brokers import AlpacaBroker, _alpaca_to_asset_class, make_broker
+from hedger.execution.brokers import (
+    AlpacaBroker,
+    _alpaca_to_asset_class,
+    make_broker,
+    normalize_crypto_ticker,
+)
 
 
 @pytest.fixture
@@ -240,3 +245,59 @@ def test_seed_fill_watermark_advances_only_forward():
     assert b._fill_watermark == late
     AlpacaBroker.seed_fill_watermark(b, early)
     assert b._fill_watermark == late  # earlier seed must NOT regress watermark
+
+
+# -- crypto symbol normalisation (regression for the 2026-05-09 BTC over-buy) --
+
+
+def test_normalize_crypto_ticker_pair_form():
+    assert normalize_crypto_ticker("BTCUSD") == "BTC/USD"
+    assert normalize_crypto_ticker("ETHUSDT") == "ETH/USDT"
+    assert normalize_crypto_ticker("USDCUSD") == "USDC/USD"
+    assert normalize_crypto_ticker("ETHBTC") == "ETH/BTC"
+    assert normalize_crypto_ticker("BTC/USD") == "BTC/USD"  # idempotent
+    assert normalize_crypto_ticker("SPY") == "SPY"  # unknown quote: untouched
+    assert normalize_crypto_ticker("USD") == "USD"  # bare quote: untouched
+
+
+def test_alpaca_positions_crypto_symbol_matches_universe_form(fake_alpaca_env, monkeypatch):
+    """Alpaca reports crypto positions as BTCUSD; the runner looks up BTC/USD.
+
+    Before the fix the position never matched the decision's symbol, so the
+    runner treated the holding as zero and bought another 10% of NAV in BTC
+    on every tick until buying power ran out.
+    """
+    broker, fake_client = _make_broker_with_fake_client(monkeypatch)
+    fake_client.get_all_positions.return_value = [
+        SimpleNamespace(symbol="BTCUSD", asset_class="crypto", qty="1.12", avg_entry_price="0"),
+        SimpleNamespace(symbol="SPY", asset_class="us_equity", qty="13.8", avg_entry_price="749.95"),
+    ]
+    pos = broker.positions()
+    btc = Symbol("BTC/USD", AssetClass.CRYPTO)
+    assert btc in pos
+    assert pos[btc].qty == pytest.approx(1.12)
+    assert Symbol("SPY", AssetClass.EQUITY) in pos
+    assert not any(s.ticker == "BTCUSD" for s in pos)
+
+
+def test_alpaca_fills_normalise_crypto_symbol(fake_alpaca_env, monkeypatch):
+    """Polled fills go through the same normalisation as positions."""
+    from datetime import datetime, timezone
+
+    broker, fake_client = _make_broker_with_fake_client(monkeypatch)
+    fake_client.get_orders.return_value = [
+        SimpleNamespace(
+            id="o-1",
+            symbol="BTCUSD",
+            asset_class="crypto",
+            side="OrderSide.BUY",
+            filled_qty="0.1",
+            filled_avg_price="70000",
+            filled_at=datetime(2026, 10, 11, tzinfo=timezone.utc),
+        ),
+    ]
+    fills = list(broker.fills())
+    assert len(fills) == 1
+    assert fills[0].symbol == Symbol("BTC/USD", AssetClass.CRYPTO)
+    assert fills[0].side is Side.BUY
+    assert fills[0].qty == pytest.approx(0.1)
