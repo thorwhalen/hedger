@@ -6,6 +6,31 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-10-11 — Alpaca crypto positions now use the universe symbol form (BTCUSD → BTC/USD)
+
+**Scope:** bug fix in the Alpaca broker adapter (execution layer). No strategy, sizer or risk-middleware change.
+
+**Changed:** `hedger/execution/brokers.py` (new `normalize_crypto_ticker` and `_symbol_from_alpaca`, used by `AlpacaBroker.positions()`, `fills()` and the fill stream), `tests/test_alpaca_unit.py` (three regression tests).
+
+**Why:** Today's brief showed a 1.12 BTC position journalled as `default:BTCUSD` while every decision targets `default:BTC/USD` at 10% weight, with 23 decisions and 0 fills. Alpaca returns crypto *positions* in concatenated form (`BTCUSD`) but *orders and fills* in pair form (`BTC/USD`), as `fills.jsonl` and `drifts.jsonl` confirm. The runner's `positions.get(d.symbol)` therefore never found the BTC holding, treated it as zero, and submitted a fresh 10%-of-NAV buy on every hourly tick. `drifts.jsonl` shows exactly that on 2026-05-09: BTC grew by ~0.1246 BTC per hour from 08:34 to 15:34 UTC until buying power ran out, plus one more buy on 2026-05-20 after an equity sell freed cash. The paper account has held roughly 80% of NAV in BTC since then, so the `max_position_weight = 0.10` cap was effectively bypassed for crypto, and every hourly BTC buy since has been rejected by Alpaca (a stream of `submit_failed` warnings that the brief cannot see). With the fix the broker reports `Symbol("BTC/USD", CRYPTO)` and the existing sizing arithmetic produces the correct sell-down to 10%.
+
+**Metrics (90-day backtest, same universe):** not run. This session had no command execution (see the session note below), and the change does not touch the backtest path (`backtest_simple` drives a `PaperBroker`), so before/after backtest metrics are identical by construction. Validation relies on the orchestrator's `pytest -q` gate.
+
+**Watch tomorrow:**
+- The fix takes effect when `hedger serve` restarts. On the first tick after that, expect one market **sell of about 0.98 BTC** (from ~1.12 to ~0.14 BTC, i.e. 10% of NAV) and a one-time pair of `position_drift` records (`default:BTCUSD` → 0 and `default:BTC/USD` → 1.12). If you would rather sell down by hand first, do it before restarting.
+- The brief's `latest_positions` should then show `default:BTC/USD`, `fills` should be non-zero on the restart day, and the hourly BTC `submit_failed` warnings should stop.
+
+**Session note:** the Claude Code process for this cycle was started without `HOME` in its environment, so the `PreToolUse` Bash hook configured as `$HOME/.claude/hooks/...` could not be found and Claude Code refused every Bash call; the Monitor tool needed an interactive approval. The session could not run pytest, the backtest, or git. The code change was kept minimal, with a doctest, and the tests were added to an existing test file so a gate rollback reverts code and tests together. Nothing was committed by this session; the orchestrator's pytest gate decides whether the working-tree change survives, and the next snapshot commit picks it up.
+
+**TODO (next cycles, in priority order):**
+1. **Make reflection sessions runnable again.** Ensure `HOME` (and `SHELL`) are present in the environment `reflect()` hands to the Claude Code subprocess, e.g. `env = {**os.environ}; env.setdefault("HOME", str(Path.home()))`, and consider `Environment=HOME=%h` in the systemd unit template. Needs a test in `tests/test_reflect.py` asserting the `env` kwarg. Open question in `hedger/misc/docs/QUESTIONS.md`.
+2. **Gross-exposure cap is a no-op live.** `Runner.tick()` builds `default_risk_middleware` with the default `other_targets=lambda s: {}`, so `cap_gross_exposure` always sees gross = 0 and never vetoes. Wire current positions/targets in; needs owner approval since it touches the risk chain, and tests.
+3. **Hourly rebalance churn on SPY/QQQ.** The dust threshold is `max($1, 0.05% of NAV)` ≈ $52, so the bot trades $50–$400 of SPY/QQQ almost every market hour (see `orders.jsonl`). Add a rebalance band as a keyword arg on the runner (e.g. skip when |target − current| < 1% of NAV).
+4. **Brief observability.** (a) Signals and decisions are keyed by *bar* timestamp, so on weekends every SPY/QQQ record collapses onto Friday's last bar and falls outside the 24h window; today's zero SPY/QQQ signals are that artefact, not a silent strategy. (b) `counts.orders` is all-time (216), not windowed. (c) `unfilled_orders` matches on (symbol, side) only and lists May orders. (d) `submit_failed` is only logged, never journalled, so rejected orders are invisible to the brief. Fix in `hedger/reflection/monitor.py` and `Runner.tick()`.
+5. Delete `scrap/_reflect_2026-10-11/` (scratch scripts this session could neither execute nor remove; untracked and harmless).
+
+---
+
 ## 2026-06-06 — CLI guard: warn when ambient env shadows the envfile
 
 **Why:** `load_envfile_into_environ()` is `override=False`, so an `ALPACA_API_KEY`
