@@ -322,9 +322,14 @@ def test_alpaca_open_orders_report_remaining_qty(fake_alpaca_env, monkeypatch):
     broker, fake_client = _make_broker_with_fake_client(monkeypatch)
     fake_client.get_orders.return_value = [
         SimpleNamespace(symbol="BTCUSD", asset_class="crypto", side="OrderSide.SELL",
-                        qty="1.0", filled_qty="0.25", client_order_id="c1"),
+                        qty="1.0", filled_qty="0.25", client_order_id="c1",
+                        order_type="OrderType.MARKET"),
+        SimpleNamespace(symbol="BTCUSD", asset_class="crypto", side="OrderSide.SELL",
+                        qty="1.0", filled_qty="0", client_order_id="stop",
+                        order_type="OrderType.STOP"),
         SimpleNamespace(symbol="SPY", asset_class="us_equity", side="OrderSide.BUY",
-                        qty="2", filled_qty="2", client_order_id="c2"),
+                        qty="2", filled_qty="2", client_order_id="c2",
+                        order_type="OrderType.MARKET"),
     ]
     orders = broker.open_orders()
     assert len(orders) == 1

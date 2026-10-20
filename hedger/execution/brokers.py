@@ -303,6 +303,11 @@ class AlpacaBroker:
         req = GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=200)
         out: list[Order] = []
         for o in self._client.get_orders(filter=req):
+            # Only market orders: that is all the runner submits. A resting limit or
+            # stop (e.g. a protective stop placed by hand) is not a pending change to
+            # what the bot holds, and counting it would make the bot trade more.
+            if not str(getattr(o, "order_type", "")).lower().endswith("market"):
+                continue
             remaining = float(o.qty or 0.0) - float(getattr(o, "filled_qty", 0) or 0.0)
             if remaining <= 0:
                 continue
