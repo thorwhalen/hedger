@@ -33,6 +33,7 @@ from hedger.base import (
     TimeInForce,
     utc_now,
 )
+from hedger.util import get_logger
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +100,10 @@ class PaperBroker:
     def cancel(self, order_id: str) -> None:
         self._open_orders.pop(order_id, None)
 
+    def open_orders(self) -> list[Order]:
+        """Queued (limit/stop) orders not yet filled."""
+        return list(self._open_orders.values())
+
     def fills(self) -> Iterable[Fill]:
         while self._fills:
             yield self._fills.popleft()
@@ -130,6 +135,8 @@ def _alpaca_to_asset_class(raw: str) -> AssetClass:
         return AssetClass.OPTION
     return AssetClass.EQUITY
 
+
+_log = get_logger("hedger.brokers")
 
 # Quote currencies Alpaca uses for crypto pairs. Checked in this order so the
 # longer stablecoin quotes win over the plain "USD" suffix they end with.
@@ -181,6 +188,14 @@ def _symbol_from_alpaca(raw_symbol: str, raw_asset_class: str) -> Symbol:
     ticker = raw_symbol
     if asset_class is AssetClass.CRYPTO:
         ticker = normalize_crypto_ticker(raw_symbol)
+        if "/" not in ticker:
+            # An unknown quote currency (e.g. BTCEUR) would silently reintroduce
+            # the position/decision symbol mismatch normalisation exists to prevent.
+            _log.warning(
+                "unknown_crypto_quote_currency",
+                symbol=raw_symbol,
+                known_quotes=_CRYPTO_QUOTE_CURRENCIES,
+            )
     return Symbol(ticker=ticker, asset_class=asset_class)
 
 
@@ -275,6 +290,31 @@ class AlpacaBroker:
 
     def cancel(self, order_id: str) -> None:
         self._client.cancel_order_by_id(order_id)
+
+    def open_orders(self) -> list[Order]:
+        """Orders accepted by the broker but not yet fully filled.
+
+        ``qty`` is the *remaining* quantity, so the runner can treat each as a
+        pending position change instead of recomputing the same trade.
+        """
+        from alpaca.trading.enums import QueryOrderStatus
+        from alpaca.trading.requests import GetOrdersRequest
+
+        req = GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=200)
+        out: list[Order] = []
+        for o in self._client.get_orders(filter=req):
+            remaining = float(o.qty or 0.0) - float(getattr(o, "filled_qty", 0) or 0.0)
+            if remaining <= 0:
+                continue
+            out.append(
+                Order(
+                    symbol=_symbol_from_alpaca(o.symbol, getattr(o, "asset_class", "")),
+                    side=Side.BUY if str(o.side).lower().endswith("buy") else Side.SELL,
+                    qty=remaining,
+                    client_order_id=getattr(o, "client_order_id", None),
+                )
+            )
+        return out
 
     # -- fill reconciliation --------------------------------------------------
 

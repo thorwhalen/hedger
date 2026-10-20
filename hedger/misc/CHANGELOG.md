@@ -6,6 +6,16 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-10-20 — Crypto follow-ups: unknown-quote warning, open orders counted, BTC sell-down test
+
+**Scope:** execution adapter and runner; no risk-middleware or strategy change.
+
+**Changed:** `hedger/execution/brokers.py` (warn on a crypto ticker whose quote currency is unknown; `open_orders()` on `AlpacaBroker` and `PaperBroker`), `hedger/live/runner.py` (`Runner.pending_qty()`; working orders count as already held when sizing), `tests/test_alpaca_unit.py`, `tests/test_runner_orders.py`.
+
+**Why:** follow-ups from the review of the BTCUSD fix (issue 13). An unnormalised quote like `BTCEUR` would silently bring the symbol mismatch back; an unfilled sell was recomputed on every tick; and no runner-level test covered selling a held BTC position down to the per-asset cap.
+
+---
+
 ## 2026-10-11 — Alpaca crypto positions now use the universe symbol form (BTCUSD → BTC/USD)
 
 **Scope:** bug fix in the Alpaca broker adapter (execution layer). No strategy, sizer or risk-middleware change.
