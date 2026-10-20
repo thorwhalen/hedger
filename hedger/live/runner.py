@@ -321,6 +321,27 @@ class Runner:
         merged = [seen[k] for k in sorted(seen)]
         return merged
 
+    def pending_qty(self) -> dict[Symbol, float]:
+        """Signed quantity per symbol still working at the broker (buys +, sells -).
+
+        Brokers without an ``open_orders()`` method (it is not part of the
+        ``Broker`` protocol) report nothing pending. A failed lookup also reports
+        nothing pending, with a warning: the broker rejects a duplicate sell anyway.
+        """
+        lookup = getattr(self.broker, "open_orders", None)
+        if lookup is None:
+            return {}
+        try:
+            orders = list(lookup())
+        except Exception as e:
+            log.warning("open_orders_failed", error=f"{type(e).__name__}: {e}")
+            return {}
+        pending: dict[Symbol, float] = {}
+        for o in orders:
+            signed = o.qty if o.side is Side.BUY else -o.qty
+            pending[o.symbol] = pending.get(o.symbol, 0.0) + signed
+        return pending
+
     def tick(self) -> dict:
         """Run one full pipeline iteration. Returns a small summary dict."""
         tick_ts = utc_now().isoformat(timespec="seconds")
@@ -404,6 +425,7 @@ class Runner:
 
         # 4. Convert to orders and submit
         last_close = {s: (bars[s][-1].close if bars[s] else 0.0) for s in symbols}
+        pending = self.pending_qty()
         n_submitted = 0
         n_skipped_market_closed = 0
         for d in approved:
@@ -412,7 +434,10 @@ class Runner:
                 continue
             target_notional = d.target_weight * nav
             current = positions.get(d.symbol)
-            current_notional = (current.qty * px) if current else 0.0
+            # Open orders count as already-held: recomputing them is how an
+            # unfilled sell got resubmitted on the next tick.
+            current_qty = (current.qty if current else 0.0) + pending.get(d.symbol, 0.0)
+            current_notional = current_qty * px
             qty = (target_notional - current_notional) / px
             if abs(qty * px) < max(1.0, 0.0005 * nav):  # ignore dust trades
                 continue

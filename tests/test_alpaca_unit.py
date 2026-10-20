@@ -301,3 +301,37 @@ def test_alpaca_fills_normalise_crypto_symbol(fake_alpaca_env, monkeypatch):
     assert fills[0].symbol == Symbol("BTC/USD", AssetClass.CRYPTO)
     assert fills[0].side is Side.BUY
     assert fills[0].qty == pytest.approx(0.1)
+
+
+def test_unknown_crypto_quote_currency_warns(fake_alpaca_env, monkeypatch):
+    """BTCEUR passes through unnormalised; that must be loud, not silent."""
+    from hedger.execution import brokers
+
+    seen = []
+    monkeypatch.setattr(brokers._log, "warning", lambda event, **kw: seen.append((event, kw)))
+    sym = brokers._symbol_from_alpaca("BTCEUR", "crypto")
+    assert sym.ticker == "BTCEUR"
+    assert seen and seen[0][0] == "unknown_crypto_quote_currency"
+    seen.clear()
+    brokers._symbol_from_alpaca("BTCUSD", "crypto")
+    brokers._symbol_from_alpaca("SPY", "us_equity")
+    assert not seen
+
+
+def test_alpaca_open_orders_report_remaining_qty(fake_alpaca_env, monkeypatch):
+    broker, fake_client = _make_broker_with_fake_client(monkeypatch)
+    fake_client.get_orders.return_value = [
+        SimpleNamespace(symbol="BTCUSD", asset_class="crypto", side="OrderSide.SELL",
+                        qty="1.0", filled_qty="0.25", client_order_id="c1",
+                        order_type="OrderType.MARKET"),
+        SimpleNamespace(symbol="BTCUSD", asset_class="crypto", side="OrderSide.SELL",
+                        qty="1.0", filled_qty="0", client_order_id="stop",
+                        order_type="OrderType.STOP"),
+        SimpleNamespace(symbol="SPY", asset_class="us_equity", side="OrderSide.BUY",
+                        qty="2", filled_qty="2", client_order_id="c2",
+                        order_type="OrderType.MARKET"),
+    ]
+    orders = broker.open_orders()
+    assert len(orders) == 1
+    assert orders[0].symbol.ticker == "BTC/USD"
+    assert orders[0].qty == pytest.approx(0.75)
