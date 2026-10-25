@@ -29,6 +29,7 @@ guardrails; it does the agentic work.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import textwrap
@@ -84,16 +85,24 @@ REFLECT_PROMPT = textwrap.dedent("""
 
 
 def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+    # HOME is where git finds the committer identity (~/.gitconfig); see _child_env.
+    return subprocess.run(
+        ["git", *args], cwd=cwd, env=_child_env(), check=True, capture_output=True, text=True
+    )
 
 
 def snapshot(repo: Path, label: str) -> str:
-    """Tag the current state so we can roll back. Returns the tag name."""
-    try:
-        _git(["add", "-A"], repo)
-        _git(["commit", "-m", f"snapshot before reflection {label}", "--allow-empty"], repo)
-    except subprocess.CalledProcessError:
-        pass  # nothing to commit
+    """Commit everything and tag it so we can roll back. Returns the tag name.
+
+    Raises :class:`subprocess.CalledProcessError` if the commit fails. The
+    commit is ``--allow-empty``, so "nothing to commit" is not a failure; any
+    failure means the tag would land on an older commit and :func:`rollback`
+    would silently discard the uncommitted work in the tree. Until 2026-10-21
+    that error was swallowed, and with ``HOME`` unset git had no identity, so
+    no snapshot commit was ever made by ``hedger serve``.
+    """
+    _git(["add", "-A"], repo)
+    _git(["commit", "-m", f"snapshot before reflection {label}", "--allow-empty"], repo)
     tag = f"reflect-{label}"
     _git(["tag", "-f", tag], repo)
     return tag
@@ -101,6 +110,45 @@ def snapshot(repo: Path, label: str) -> str:
 
 def rollback(repo: Path, tag: str) -> None:
     _git(["reset", "--hard", tag], repo)
+
+
+def _account_home() -> str | None:
+    """Home directory from the account database, or ``None`` if it can't be found.
+
+    Falls back to the ``pwd`` entry when ``HOME`` is unset, which is what
+    :meth:`pathlib.Path.home` does; returns ``None`` instead of raising when
+    neither is available (e.g. a uid with no passwd entry in a container).
+    """
+    try:
+        return str(Path.home())
+    except (RuntimeError, KeyError):
+        return None
+
+
+def _child_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Environment for the Claude Code subprocess: the parent's, with ``HOME`` guaranteed.
+
+    A system ``systemd`` unit without ``User=`` runs ``hedger serve`` with no
+    ``HOME`` at all. Claude Code then expands ``$HOME/.claude/...`` in the
+    user's hook commands to ``/.claude/...`` and refuses every shell call, so
+    the reflection session can run neither pytest, nor the backtest, nor git
+    (this happened on the 2026-10-11 and 2026-10-18 cycles). When ``HOME`` is
+    missing or empty we fill it from the account database; everything else
+    passes through untouched, so secrets from ``EnvironmentFile=`` still reach
+    the session.
+
+    >>> env = _child_env({"PATH": "/usr/bin"})
+    >>> env["PATH"], bool(env.get("HOME"))
+    ('/usr/bin', True)
+    >>> _child_env({"HOME": "/srv/hedger"})["HOME"]
+    '/srv/hedger'
+    """
+    env = dict(os.environ if base is None else base)
+    if not env.get("HOME"):
+        home = _account_home()
+        if home:
+            env["HOME"] = home
+    return env
 
 
 def _validation_passed(repo: Path) -> bool:
@@ -137,7 +185,13 @@ def reflect(
 
     label = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M")
     brief_path = write_brief(mall)
-    tag = snapshot(repo, label)
+    try:
+        tag = snapshot(repo, label)
+    except subprocess.CalledProcessError as e:
+        # Without a snapshot commit a rollback would destroy uncommitted work: don't run.
+        log.error("snapshot_failed", cmd=e.cmd, stderr=(e.stderr or "")[-1000:])
+        notifier.notify("error", "reflection skipped: snapshot commit failed", label=label)
+        return {"status": "snapshot_failed", "brief": str(brief_path)}
     log.info("reflection_start", repo=str(repo), tag=tag, brief=str(brief_path))
 
     prompt = REFLECT_PROMPT.format(
@@ -163,6 +217,7 @@ def reflect(
         proc = subprocess.run(
             cmd,
             cwd=repo,
+            env=_child_env(),  # never spawn the session without HOME (see _child_env)
             capture_output=True,
             text=True,
             timeout=cfg.reflection.max_minutes * 60,

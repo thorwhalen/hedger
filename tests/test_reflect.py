@@ -8,6 +8,7 @@ the pytest gate stubbed so we never spend real model time.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -17,7 +18,8 @@ import pytest
 
 from hedger.config import Config, ReflectionConfig
 from hedger.data.stores import mall
-from hedger.reflection.orchestrator import reflect
+from hedger.reflection import orchestrator
+from hedger.reflection.orchestrator import _child_env, reflect, snapshot
 
 
 def _init_temp_git_repo() -> Path:
@@ -207,3 +209,96 @@ def test_reflect_handles_timeout(temp_repo):
         res = reflect(repo=temp_repo, cfg=cfg, mall=m)
     assert res["status"] == "timeout"
     assert res["tag"].startswith("reflect-")
+
+
+def test_child_env_fills_home_when_missing(monkeypatch):
+    """A parent without HOME (system systemd unit) must not pass that on to claude.
+
+    Without HOME, Claude Code's `$HOME/.claude/...` hooks resolve to `/.claude/...`
+    and every Bash call is refused, so the session can't run pytest or git.
+    """
+    # Explicit base: a missing or empty HOME is filled; other vars pass through.
+    env = _child_env({"PATH": "/usr/bin", "HOME": ""})
+    assert env["PATH"] == "/usr/bin"
+    assert env["HOME"] and Path(env["HOME"]).is_absolute()
+    # A HOME that is already set is never overridden.
+    assert _child_env({"HOME": "/srv/hedger"})["HOME"] == "/srv/hedger"
+    # Default base is os.environ: drop HOME there and it comes from the passwd entry.
+    pwd = pytest.importorskip("pwd")  # POSIX only — the systemd case is POSIX anyway
+    monkeypatch.delenv("HOME", raising=False)
+    assert Path(_child_env()["HOME"]) == Path(pwd.getpwuid(os.getuid()).pw_dir)
+
+
+def test_reflect_spawns_claude_with_explicit_env_including_home(temp_repo):
+    """The claude subprocess is launched with env=... carrying HOME and the parent's vars."""
+    m = mall(temp_repo / ".hedger")
+    cfg = _cfg(max_usd=None)
+    captured: list[dict] = []
+
+    def capture(cmd, *a, **kw):
+        captured.append(dict(kw))
+        return subprocess.CompletedProcess(args=cmd, returncode=0,
+                                           stdout="{}", stderr="")
+
+    with patch("hedger.reflection.orchestrator.subprocess.run",
+               side_effect=_patch_only_claude(capture)), \
+         patch("hedger.reflection.orchestrator._validation_passed",
+               return_value=True):
+        reflect(repo=temp_repo, cfg=cfg, mall=m)
+    assert captured, "claude was never invoked"
+    env = captured[0].get("env")
+    assert env is not None, "claude must be spawned with an explicit env"
+    assert env.get("HOME") and Path(env["HOME"]).is_absolute()
+    # Everything the parent had (secrets from EnvironmentFile=, PATH, ...) passes through.
+    assert env.get("PATH") == os.environ.get("PATH")
+
+
+def test_snapshot_git_calls_carry_home(temp_repo, monkeypatch):
+    """git finds the committer identity through HOME; a parent without it must not starve git."""
+    monkeypatch.delenv("HOME", raising=False)
+    envs: list = []
+
+    def spy(cmd, *a, **kw):
+        envs.append(kw.get("env"))
+        return _REAL_SUBPROCESS_RUN(cmd, *a, **kw)
+
+    with patch("hedger.reflection.orchestrator.subprocess.run", side_effect=spy):
+        tag = snapshot(temp_repo, "t")
+    assert tag == "reflect-t"
+    assert envs and all(e and e.get("HOME") for e in envs)
+    log = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=temp_repo,
+                         capture_output=True, text=True, check=True)
+    assert log.stdout.strip() == "snapshot before reflection t"
+
+
+def test_reflect_skips_session_when_snapshot_commit_fails(temp_repo):
+    """No snapshot commit means rollback would discard uncommitted work: never spawn claude."""
+    m = mall(temp_repo / ".hedger")
+    real_git = orchestrator._git
+    spawned: list = []
+    notes: list[tuple] = []
+
+    class _Spy:
+        def notify(self, level, msg, **kw): notes.append((level, msg, kw))
+
+    def git(args, cwd):
+        if args[0] == "commit":
+            raise subprocess.CalledProcessError(128, ["git", *args],
+                                                stderr="Author identity unknown")
+        return real_git(args, cwd)
+
+    def claude(cmd, *a, **kw):
+        spawned.append(cmd)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="{}", stderr="")
+
+    with patch("hedger.reflection.orchestrator._git", side_effect=git), \
+         patch("hedger.reflection.orchestrator.subprocess.run",
+               side_effect=_patch_only_claude(claude)):
+        res = reflect(repo=temp_repo, cfg=_cfg(), mall=m, notifier=_Spy())
+    assert res["status"] == "snapshot_failed"
+    assert spawned == []
+    assert notes and notes[0][0] == "error"
+    # No tag was placed on the stale commit either.
+    tags = subprocess.run(["git", "tag", "-l", "reflect-*"], cwd=temp_repo,
+                          capture_output=True, text=True, check=True)
+    assert tags.stdout.strip() == ""
