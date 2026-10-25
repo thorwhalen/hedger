@@ -6,6 +6,34 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-10-25 — A restart no longer journals the last fill a second time
+
+**Scope:** observation (data-integrity fix in the fill journal). No strategy, sizer or risk-middleware change; nothing on the trading path reads `mall["fills"]`.
+
+**Changed:** `hedger/execution/brokers.py` (`AlpacaBroker.seed_fill_watermark` takes a keyword-only `seen_order_ids`), `hedger/live/runner.py` (new `_journalled_fill_ids`, with doctest; `make_runner` passes the journalled ids when seeding), `tests/test_alpaca_unit.py` (restart regression test that reproduces the old duplicate and checks the seeded broker yields nothing).
+
+**Why:** `fills.jsonl` holds 270 rows for 250 distinct orders: 20 orders are journalled twice, and every second copy is keyed by a run id that equals a service start time (most recently the 2026-10-24 06:34 restarts re-journalled two 2026-10-22 fills). On startup `make_runner` seeds the polling watermark with the latest journalled fill ts; `fills()` then polls one second behind it, and a fresh process has an empty `_seen_fills`, so the last journalled order(s) come back as new fills under the new run id. The brief's fill counts and notional are inflated on restart days, any fill-history export (tax records, see `MANUAL_CHECKLIST.md`) double-counts, and TODO 2 below (netting own fills out of drift) would subtract those duplicates and invent drift. That TODO depends on this fix, so it came first.
+
+**Metrics (90-day backtest, sma_crossover, SPY/QQQ/BTC-USD, 1h):** identical by construction (the backtest drives `PaperBroker`), confirmed: before and after both sharpe=0.408, mdd=-1.82%, n_trades=3396. `pytest -q` green with the new test and doctest.
+
+**Learned today (from the brief):**
+- The 2026-10-21 orchestrator fix is live: the 22:00 snapshot commit exists, authored with the right identity, and this is the first session in four cycles with a working shell.
+- 23 signals, 0 decisions, 0 fills: BTC's fast SMA stayed below the slow one all day (score 0.0), and SPY/QQQ signals carry Friday's last bar (Sunday). That is the no-exit behaviour of Question 5, not a stall; positions are unchanged since the 2026-10-22 fills.
+- `counts.orders = 246` is still all-time and `unfilled_orders` still lists May orders (brief-observability TODO).
+- The running service's tree predated PR #14 (merged upstream 2026-10-20); this session's commits are being landed on top of it.
+
+**Watch tomorrow:**
+- The fix takes effect when `hedger serve` restarts. On the next restart, `fills.jsonl` should gain no row whose `order_id` is already present.
+- The existing 20 duplicate rows stay in the journal (append-only); readers that count fills should dedupe by `order_id` until a cleanup is decided.
+
+**TODO (next cycles, in priority order):**
+1. Drift that ignores own fills (carried from 2026-10-21 TODO 2): now unblocked; net the signed qty of `mall["fills"]` since the previous snapshot's `ts`, deduped by `order_id`, into `prev_qty` in `Runner.reconcile()`.
+2. Brief: count fills by distinct `order_id` in `reflection.monitor.daily_brief`, and window `counts.orders`.
+3. Record rolled-back and skipped sessions in `mall["reflections"]`.
+4. Carried over: exit-on-flat (Question 5), gross-exposure cap (Question 3), rebalance band (Question 4).
+
+---
+
 ## 2026-10-21 — Snapshot commits get a `HOME` too, and a failed snapshot stops the cycle instead of arming a destructive rollback
 
 **Scope:** reflection-infrastructure fix (orchestrator only). No strategy, sizer, broker or risk-middleware change; the trading path is untouched.

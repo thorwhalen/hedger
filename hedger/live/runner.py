@@ -84,6 +84,24 @@ def _latest_fill_ts(mall: Mapping) -> "datetime | None":
     return latest
 
 
+def _journalled_fill_ids(mall: Mapping) -> set[str]:
+    """Return the order ids already recorded in mall["fills"].
+
+    >>> _journalled_fill_ids({"fills": {("run", "a"): {"order_id": "a"}, ("r", "x"): {}}})
+    {'a'}
+    >>> _journalled_fill_ids({})
+    set()
+    """
+    try:
+        return {
+            str(v["order_id"])
+            for v in mall["fills"].values()
+            if isinstance(v, dict) and v.get("order_id")
+        }
+    except Exception:
+        return set()
+
+
 @dataclass
 class Runner:
     """Composable application service. All seams are constructor-injected."""
@@ -562,11 +580,14 @@ def make_runner(cfg: Config | None = None, *, strategy_name: str = "sma_crossove
         except Exception as e:
             log.info("fill_stream_unavailable", error=f"{type(e).__name__}: {e}")
         # Seed the polling watermark from the mall so a process restart
-        # doesn't re-emit every fill from the last 24h.
+        # doesn't re-emit every fill from the last 24h, and mark journalled
+        # fills as seen so the poll's 1s overlap doesn't re-journal the last one.
         try:
             seed = _latest_fill_ts(runner.mall)
             if seed is not None:
-                broker.seed_fill_watermark(seed)
+                broker.seed_fill_watermark(
+                    seed, seen_order_ids=_journalled_fill_ids(runner.mall)
+                )
         except Exception as e:
             log.info("fill_watermark_seed_failed", error=f"{type(e).__name__}: {e}")
     # Snapshot + reconcile against any prior journal — surfaces drift that

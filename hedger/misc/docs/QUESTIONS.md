@@ -4,7 +4,8 @@ Written by reflection cycles when something was unclear and the safe choice was 
 
 ## 2026-10-21
 
-6. **Please restart `hedger serve`** (`systemctl restart hedger`) on the current working tree, and if you can, run `pytest -q` and commit the staged/modified files (orchestrator, `tests/test_reflect.py`, CHANGELOG, this file) yourself first. The 2026-10-18 and 2026-10-21 orchestrator fixes give the reflection session and its git calls a `HOME`, but the running process still has the old code: three cycles in a row have had no shell, and no snapshot commit has ever been made, so a failed gate resets the tree to the last human commit (it did on 2026-10-14). Until it restarts, every reflection runs blind and unprotected. If you would rather pause reflections until then, set `reflection.enabled = false`.
+Question 6 (restart `hedger serve` on the HOME fixes) was resolved by the 2026-10-24 restart: the 2026-10-25 snapshot commit landed and that session had a shell. See `CHANGELOG.md`.
+
 
 ## 2026-10-18
 

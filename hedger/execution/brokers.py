@@ -382,10 +382,20 @@ class AlpacaBroker:
                 venue=self.name,
             )
 
-    def seed_fill_watermark(self, watermark: datetime) -> None:
-        """Set the watermark from outside (e.g. mall["fills"] on restart)."""
+    def seed_fill_watermark(
+        self, watermark: datetime, *, seen_order_ids: Iterable[str] = ()
+    ) -> None:
+        """Set the watermark from outside (e.g. mall["fills"] on restart).
+
+        ``seen_order_ids`` are order ids already journalled. Pass them on
+        restart: the poll re-reads one second behind the watermark, and a
+        fresh process has an empty ``_seen_fills``, so without them the last
+        journalled fill(s) are yielded (and journalled) a second time.
+        """
         if self._fill_watermark is None or watermark > self._fill_watermark:
             self._fill_watermark = watermark
+        for order_id in seen_order_ids:
+            self._seen_fills.add(str(order_id))
 
     def start_fill_stream(
         self,
