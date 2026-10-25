@@ -585,9 +585,7 @@ def make_runner(cfg: Config | None = None, *, strategy_name: str = "sma_crossove
         try:
             seed = _latest_fill_ts(runner.mall)
             if seed is not None:
-                broker.seed_fill_watermark(
-                    seed, seen_order_ids=_journalled_fill_ids(runner.mall)
-                )
+                broker.seed_fill_watermark(seed, seen_order_ids=_journalled_fill_ids(runner.mall))
         except Exception as e:
             log.info("fill_watermark_seed_failed", error=f"{type(e).__name__}: {e}")
     # Snapshot + reconcile against any prior journal — surfaces drift that
