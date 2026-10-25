@@ -247,6 +247,34 @@ def test_seed_fill_watermark_advances_only_forward():
     assert b._fill_watermark == late  # earlier seed must NOT regress watermark
 
 
+def test_seeded_restart_does_not_rejournal_last_fill(fake_alpaca_env, monkeypatch):
+    """Regression: every restart re-journalled the last fill (20 dups by 2026-10-24).
+
+    The poll re-reads 1s behind the seeded watermark and a fresh broker has an
+    empty ``_seen_fills``, so the last journalled order came back as a new fill.
+    """
+    from datetime import datetime, timezone
+
+    filled_at = datetime(2026, 10, 22, 14, 39, 27, tzinfo=timezone.utc)
+    last_order = SimpleNamespace(
+        id="76a1387e", symbol="QQQ", asset_class="us_equity", side="OrderSide.BUY",
+        filled_qty="0.0915", filled_avg_price="708.346", filled_at=filled_at,
+    )
+
+    def restarted_broker():
+        broker, fake_client = _make_broker_with_fake_client(monkeypatch)
+        fake_client.get_orders.return_value = [last_order]
+        return broker
+
+    unseeded_ids = restarted_broker()
+    unseeded_ids.seed_fill_watermark(filled_at)
+    assert [f.order_id for f in unseeded_ids.fills()] == ["76a1387e"]  # the old bug
+
+    broker = restarted_broker()
+    broker.seed_fill_watermark(filled_at, seen_order_ids=["76a1387e"])
+    assert list(broker.fills()) == []
+
+
 # -- crypto symbol normalisation (regression for the 2026-05-09 BTC over-buy) --
 
 

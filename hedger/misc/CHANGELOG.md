@@ -6,6 +6,65 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-10-25 — A restart no longer journals the last fill a second time
+
+**Scope:** observation (data-integrity fix in the fill journal). No strategy, sizer or risk-middleware change; nothing on the trading path reads `mall["fills"]`.
+
+**Changed:** `hedger/execution/brokers.py` (`AlpacaBroker.seed_fill_watermark` takes a keyword-only `seen_order_ids`), `hedger/live/runner.py` (new `_journalled_fill_ids`, with doctest; `make_runner` passes the journalled ids when seeding), `tests/test_alpaca_unit.py` (restart regression test that reproduces the old duplicate and checks the seeded broker yields nothing).
+
+**Why:** `fills.jsonl` holds 270 rows for 250 distinct orders: 20 orders are journalled twice, and every second copy is keyed by a run id that equals a service start time (most recently the 2026-10-24 06:34 restarts re-journalled two 2026-10-22 fills). On startup `make_runner` seeds the polling watermark with the latest journalled fill ts; `fills()` then polls one second behind it, and a fresh process has an empty `_seen_fills`, so the last journalled order(s) come back as new fills under the new run id. The brief's fill counts and notional are inflated on restart days, any fill-history export (tax records, see `MANUAL_CHECKLIST.md`) double-counts, and TODO 2 below (netting own fills out of drift) would subtract those duplicates and invent drift. That TODO depends on this fix, so it came first.
+
+**Metrics (90-day backtest, sma_crossover, SPY/QQQ/BTC-USD, 1h):** identical by construction (the backtest drives `PaperBroker`), confirmed: before and after both sharpe=0.408, mdd=-1.82%, n_trades=3396. `pytest -q` green with the new test and doctest.
+
+**Learned today (from the brief):**
+- The 2026-10-21 orchestrator fix is live: the 22:00 snapshot commit exists, authored with the right identity, and this is the first session in four cycles with a working shell.
+- 23 signals, 0 decisions, 0 fills: BTC's fast SMA stayed below the slow one all day (score 0.0), and SPY/QQQ signals carry Friday's last bar (Sunday). That is the no-exit behaviour of Question 5, not a stall; positions are unchanged since the 2026-10-22 fills.
+- `counts.orders = 246` is still all-time and `unfilled_orders` still lists May orders (brief-observability TODO).
+- The running service's tree predated PR #14 (merged upstream 2026-10-20); this session's commits are being landed on top of it.
+
+**Watch tomorrow:**
+- The fix takes effect when `hedger serve` restarts. On the next restart, `fills.jsonl` should gain no row whose `order_id` is already present.
+- The existing 20 duplicate rows stay in the journal (append-only); readers that count fills should dedupe by `order_id` until a cleanup is decided.
+
+**TODO (next cycles, in priority order):**
+1. Drift that ignores own fills (carried from 2026-10-21 TODO 2): now unblocked; net the signed qty of `mall["fills"]` since the previous snapshot's `ts`, deduped by `order_id`, into `prev_qty` in `Runner.reconcile()`.
+2. Brief: count fills by distinct `order_id` in `reflection.monitor.daily_brief`, and window `counts.orders`.
+3. Record rolled-back and skipped sessions in `mall["reflections"]`.
+4. Carried over: exit-on-flat (Question 5), gross-exposure cap (Question 3), rebalance band (Question 4).
+
+---
+
+## 2026-10-21 — Snapshot commits get a `HOME` too, and a failed snapshot stops the cycle instead of arming a destructive rollback
+
+**Scope:** reflection-infrastructure fix (orchestrator only). No strategy, sizer, broker or risk-middleware change; the trading path is untouched.
+
+**Changed:** `hedger/reflection/orchestrator.py` (`_git` passes `env=_child_env()`; `snapshot()` no longer swallows `CalledProcessError`; `reflect()` returns `status="snapshot_failed"` with an `error` notification and never spawns Claude Code when the snapshot commit fails), `tests/test_reflect.py` (two tests: every snapshot git call carries `HOME` and the snapshot commit lands with `HOME` removed from the parent; a failing commit yields `snapshot_failed`, no claude spawn, an `error` notification and no `reflect-*` tag). About 25 lines of code and 50 of tests.
+
+**Why:** The git reflog shows that `hedger serve` has **never** made a snapshot commit. Every orchestrator git operation runs with the service's env, which has no `HOME`, so git cannot read the committer identity in `~/.gitconfig` (the repo has none of its own) and `git commit` fails. `snapshot()` caught that as "nothing to commit" (impossible with `--allow-empty`) and tagged the *previous* commit. The rollback tag therefore never covered the working tree, and a failed gate ran `git reset --hard` to the last human commit, discarding every uncommitted change in tracked files, including earlier sessions' work that had passed its own gate. This has already happened once: the reflog's last entry is `reset: moving to reflect-20261014T2200` at 2026-10-14 22:06:59 UTC by `root <root@thorwhalen.(none)>` (the identity git falls back to when it can't find one), and that cycle left no CHANGELOG entry and no `reflections.jsonl` record (only passing sessions are recorded). Right now the 2026-10-18 `HOME` fix is still only *staged* (the `git add -A` of tonight's snapshot ran; its commit did not), and `reflect-20261021T2200` points at `ae14386`, so if tonight's gate fails it takes the 10-18 fix with it. The 10-18 fix covered only the Claude Code spawn, not `_git`, so a restart alone would not have closed this. Refusing to run when the snapshot fails is the safe direction: a reflection that cannot be rolled back cleanly should not run.
+
+**Metrics (90-day backtest, same universe):** not applicable and not run. There was no shell again this session (see the session note), and the change does not touch strategy, sizing or execution, so backtest results are identical by construction. Validation is the orchestrator's `pytest -q` gate.
+
+**Learned today (from the brief):**
+- All 53 signals scored 1.0 and produced 53 decisions: SPY and QQQ recrossed upward after the 2026-10-16 down-cross, and BTC stayed up. All three positions are at about 10.0% of the $103,207 NAV (SPY 13.36 at $772, QQQ 14.18 at $728, BTC 0.1222 at $84,346). No vetoes are visible and nothing was lost: `approx_realized_cash_change = +342` is net cash from rebalancing sells (BTC rose from about $82.6k to $84.3k).
+- **Every `position_drift` in the brief is the bot's own fill**, matching to the last digit (BTC 0.12577928 → 0.12404754 is the 22:22 sell of 0.00173174). `Runner.reconcile()` compares broker positions with the *previous tick's* snapshot and never subtracts the tick's own fills (drained at `runner.py:451`, never passed to `reconcile`). The drift journal is therefore indistinguishable from fill history, and a genuine external change (a manual trade, a corporate action, the 2026-05 BTC symbol bug) would be buried in it. That 2026-05 BTC bug was only diagnosed from `drifts.jsonl` by reasoning about it by hand.
+- Churn continues: eight fills, $61 to $170 each, all rebalances back to 10% (Question 4).
+- `unfilled_orders` still lists May to July SPY buys (TODO 4c from 2026-10-11), and `counts.orders = 240` is all-time.
+
+**Watch tomorrow:**
+- **This fix and the 10-18 one only take effect after `hedger serve` restarts** (`systemctl restart hedger`, owner action). The next cycle's reflog should then show a `commit: snapshot before reflection …` entry by Thor Whalen before the session, and that session should have a working shell. If it shows `snapshot_failed` in `journalctl -u hedger` instead, the identity is still unreachable: check that `Path.home()` for the service user is `/root`.
+- Snapshot commits will now land on local `master` ahead of `origin/master`. That is the original design, but nothing pushes them: land them with a PR (or squash) during the next shell-enabled session.
+- If tonight's gate failed, the 10-18 and 10-21 changes are gone from the tree but their blobs are still in `.git/objects` (they were staged): `git fsck --lost-found` recovers them.
+
+**TODO (next cycles, in priority order):**
+1. **Restart `hedger serve`** on the current tree (owner; see QUESTIONS.md #6). Then a shell-enabled session should run `pytest -q`, commit the 10-18 and 10-21 changes properly and open a PR.
+2. **Drift that ignores own fills** (observation, no behaviour change): pass the tick's drained fills (or `mall["fills"]` since the previous snapshot's `ts`) into `reconcile()` and add their signed qty to `prev_qty` before the epsilon check, so `drifts` holds only unexplained changes. Note that market fills can land after the tick's reconcile, so the "since prev snapshot ts" form is the robust one. One file plus a test in `tests/test_reconcile.py`.
+3. Record rolled-back and skipped sessions in `mall["reflections"]` too (status, tag, cost), so a 10-14-style rollback is visible to the next session.
+4. Carried over from 2026-10-18: exit-on-flat (Question 5), gross-exposure cap (Question 3), rebalance band (Question 4), brief observability (windowed `counts.orders`, journalled `submit_failed`, `avg_price < 0` flag, stale `unfilled_orders`), `Environment=HOME=%h` in the systemd unit template.
+
+**Session note:** no shell for the third cycle (`HOME` unset; the service was not restarted after 2026-10-18, so `_child_env()` is not in the running process). File-level work only. Nothing was committed by this session: the orchestrator's pytest gate decides, and neither tonight's nor any earlier snapshot commit exists (see "Why").
+
+---
+
 ## 2026-10-20 — Crypto follow-ups: unknown-quote warning, open orders counted, BTC sell-down test
 
 **Scope:** execution adapter and runner; no risk-middleware or strategy change.
@@ -13,6 +72,40 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 **Changed:** `hedger/execution/brokers.py` (warn on a crypto ticker whose quote currency is unknown; `open_orders()` on `AlpacaBroker` and `PaperBroker`), `hedger/live/runner.py` (`Runner.pending_qty()`; working orders count as already held when sizing), `tests/test_alpaca_unit.py`, `tests/test_runner_orders.py`.
 
 **Why:** follow-ups from the review of the BTCUSD fix (issue 13). An unnormalised quote like `BTCEUR` would silently bring the symbol mismatch back; an unfilled sell was recomputed on every tick; and no runner-level test covered selling a held BTC position down to the per-asset cap.
+
+---
+
+## 2026-10-18 — Reflection sessions get a `HOME`: the orchestrator now spawns Claude Code with an explicit env
+
+**Scope:** reflection-infrastructure fix (orchestrator only). No strategy, sizer, broker or risk-middleware change; the trading path is untouched.
+
+**Changed:** `hedger/reflection/orchestrator.py` (new `_child_env()` and `_account_home()`; `reflect()` passes `env=_child_env()` to the Claude Code `subprocess.run`), `tests/test_reflect.py` (two tests: `_child_env` fills a missing or empty `HOME` from the passwd entry and never overrides one that is set; `reflect()` spawns claude with an explicit env that carries `HOME` and the parent's variables). About 45 lines of code plus one doctest.
+
+**Why:** For the second cycle in a row this session started with `HOME` unset. The owner's `PreToolUse`/`PostToolUse` hooks are addressed as `$HOME/.claude/hooks/...`, which resolves to `/.claude/...`, so Claude Code refuses every Bash call and the session cannot run `pytest`, the backtest or `git`. `reflect()` called `subprocess.run(cmd, cwd=repo, ...)` with no `env`, so the child inherited the `hedger serve` environment, and a system `systemd` unit without `User=` has no `HOME` (systemd sets `HOME` only for units that set `User=`). The 2026-10-11 record in `reflections.jsonl` (returncode 0, validation passed, cost $8.06 against the $5 cap) shows the pytest gate itself works, so the fix belongs in the environment handed to the subprocess: `_child_env()` copies the parent env and fills `HOME` from `Path.home()` (the passwd entry when `HOME` is unset) only when it is missing or empty; secrets from `EnvironmentFile=` pass through unchanged.
+
+**Metrics (90-day backtest, same universe):** not applicable and not run (no shell this session; the change does not touch strategy, sizing or execution, so backtest results are identical by construction). Validation is the orchestrator's `pytest -q` gate after this session; the new tests and the doctest live in files that roll back together with the code if the gate fails.
+
+**Learned today (from the brief and the journals; the logs go to journald and were not readable):**
+- The BTC fix from 2026-10-11 is live. The sell-down happened on 2026-10-16 (0.99507 BTC at $82,094 and 0.00118 BTC at $82,705); `latest_positions` shows `default:BTC/USD` at 0.1268 BTC, about 10.0% of the $102,401 NAV, and today's three fills (sell $79, buy $79, buy $70, zero paper fees) are hourly rebalances holding BTC at the 10% cap as the price moves. `approx_realized_cash_change = -70` is the net cash spent on those buys, not a loss.
+- **The strategy never exits a position.** `sma_crossover` scores 0.0 when the fast SMA is below the slow one ("flat"), `equal_weight_sizer` drops zero-score signals, so there is no Decision, no order, and the position is kept. `signals.jsonl` shows SPY and QQQ at score 0.0 since the 2026-10-16T23:00 bar (fast 768.2 < slow 770.2; 719.1 < 725.9), yet the account still holds about $10k of each. Today's 23 signals against 11 decisions is the same mechanism for BTC: score 0.0 from 22:00 to 10:00 UTC, then 1.0 from the 11:00 bar (fast 81,626 > slow 81,531). `backtest_simple` has the identical gap (same sizer, same no-decision-on-zero), so backtest and paper agree with each other and both disagree with the strategy's docstring. Whether a flat signal should close the position is a trading-behaviour change and is now Question 5 in `hedger/misc/docs/QUESTIONS.md`.
+- The negative `avg_price` on BTC/USD (-637,703) is Alpaca paper's own cost basis, passed through by `AlpacaBroker.positions()` from `avg_entry_price`. The old `BTCUSD` position carried `avg_price 0.0`; after the 2026-10-16 sell Alpaca recomputed the basis as (0 - proceeds) / remaining qty = -648,258, and the two buys since averaged it up to -637,703. Cosmetic for hedger today (nothing on the live path reads `avg_price`; `reconcile()` compares quantities only) but any per-position P&L report would be wrong. A guard in the brief (`avg_price < 0` flagged) is the right fix, not a broker-side correction.
+- Weekend artefact, as predicted on 2026-10-11: 2026-10-18 is a Sunday, every SPY/QQQ signal carries Friday's last bar timestamp and falls outside the 24h window, hence 0 SPY/QQQ signals in the brief. Re-writing that same key on every hourly tick also appends a duplicate line to `signals.jsonl` each time (append-only store; only the in-memory cache dedups), which is why the file is 3.6 MB for a few thousand distinct signals.
+- `scrap/_reflect_2026-10-11/` is gone (TODO 5 from 2026-10-11 is done).
+- `hedger/util.py` logs to stdout/stderr only, so `submit_failed`, vetoes and `claude_code_done` are in `journalctl -u hedger` and invisible to a reflection session; the brief is the only in-band source.
+
+**Watch tomorrow:**
+- Tomorrow's reflection session should have a working shell. If Bash is still refused, either the service was not restarted on this code or the gate rolled it back: check `reflections.jsonl` and `journalctl -u hedger` for `validation_failed_rolling_back`.
+- BTC's fast SMA was $1.50 above the slow one at the 21:00 bar (81,443.7 vs 81,442.2). If it crosses down, expect BTC signals with score 0.0, zero decisions, zero fills and an unchanged 0.1268 BTC position. That is the no-exit behaviour above, not a stall.
+- SPY/QQQ on Monday: with score 0.0 there will be no orders at all until the fast SMA recrosses; the brief will show signals keyed by Monday's bars but no decisions.
+
+**TODO (next cycles, in priority order):**
+1. **Exit on flat** (after the owner answers Question 5): let a zero-score signal produce a `target_weight = 0` Decision, as a keyword switch on the sizer defaulting to the current behaviour, then backtest both variants on the 90-day window for SPY, QQQ and BTC/USD and compare Sharpe and max drawdown.
+2. Gross-exposure cap is a no-op live (unchanged since 2026-10-11, Question 3).
+3. Rebalance band on the runner (Question 4); today's three BTC fills were $70 to $79 each.
+4. Brief observability: a windowed `counts.orders`, a journal entry for `submit_failed`, an `avg_price < 0` flag, and skipping the `signals.jsonl` append when the key already holds the same value.
+5. Optional hardening: `Environment=HOME=%h` (or `User=`) in `_systemd_unit_text()` in `hedger/install.py`, so the service itself has a `HOME` for anything else that wants one.
+
+**Session note:** no shell again (`HOME` unset, see "Why"); file-level work only, via Read/Edit/Write. Nothing was committed by this session: the orchestrator's pytest gate decides whether the working-tree change survives, and the next snapshot commit (or a PR) picks it up. Questions 1 and 2 of 2026-10-11 were removed from `QUESTIONS.md` as answered by evidence (this fix) and by events (the sell-down).
 
 ---
 
