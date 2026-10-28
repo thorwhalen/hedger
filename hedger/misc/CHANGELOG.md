@@ -6,6 +6,32 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-10-28 — Position drift nets out the bot's own fills
+
+**Scope:** observation (drift journal). No strategy, sizer, broker or risk-middleware change; nothing on the trading path reads `mall["drifts"]`.
+
+**Changed:** `hedger/live/runner.py` (new `_fill_qty_by_symbol`, with doctest; `Runner.reconcile()` adds the signed qty of journalled fills since the previous snapshot to `prev_qty` before the epsilon check, records `explained_qty` and `unexplained_qty` on each drift, and stores a full-precision `fills_as_of` in every positions snapshot), `tests/test_reconcile.py` (three tests: own fills and a full sell-out are not drift; an in-kind residual is reported as the unexplained part only; a fill already in the previous snapshot, or journalled twice, counts once). All three fail on the old code.
+
+**Why:** TODO 1 of 2026-10-25, unblocked by that day's fill dedupe. Both of today's `position_drifts` were the bot's own BTC fills, as every drift has been since 2026-10-21, so the journal could not show a genuine external change. The window uses a new `fills_as_of` rather than the snapshot `ts`: that `ts` is truncated to seconds, and today's 19:34 snapshot is stamped `19:34:55` while the fill it contains is `19:34:55.419`, so a `ts` filter would have counted that fill on the wrong tick. The first reconcile after the restart falls back to the old `ts`.
+
+**Metrics (90-day backtest, sma_crossover, SPY/QQQ/BTC-USD, 1h):** identical by construction (the backtest drives `PaperBroker`), confirmed: before and after both sharpe=0.374, mdd=-1.84%, n_trades=3239. `pytest -q` green. Replaying today's snapshots and fills through `_fill_qty_by_symbol`: 2 drifts become 1.
+
+**Learned today (from the brief and the journals):**
+- **Alpaca takes its crypto fee in BTC on buys, and the fill journal records `fee: 0.0`.** On every BTC buy since 2026-10-18 the position grew by exactly 99.75% of the fill qty; sells match exactly (fee taken in USD). That 0.25% is the one drift left in today's replay, and it will now show up as a small negative `unexplained_qty` after each BTC buy. This is a true discrepancy, not noise: fill-based P&L and tax records understate crypto cost. The fix belongs in the broker adapter (TODO 1).
+- 53 signals, 53 decisions, 2 fills (both BTC rebalances); SPY/QQQ decisions fell under the dust threshold. `counts.orders = 252` is still all-time and `unfilled_orders` still lists May orders.
+
+**Watch tomorrow:**
+- The change takes effect when `hedger serve` restarts (owner). After that, the brief's `position_drifts` should list only BTC buys, each with `unexplained_qty` around -0.25% of `explained_qty`. Any other drift is real and worth a look.
+- A fill that Alpaca timestamps in the milliseconds between `fills_as_of` and the `positions()` read would show as a drift on that tick and the reverse on the next. This should be rare; a pair of equal and opposite drifts is that case.
+
+**TODO (next cycles, in priority order):**
+1. Journal the in-kind crypto fee: in `AlpacaBroker` fills, record the asset fee (qty filled minus qty credited, or Alpaca's fee activity) so `fee` is not 0.0 and the drift residual disappears. Needs a mock-based test in `tests/test_alpaca_unit.py`.
+2. Brief: count fills by distinct `order_id` in `reflection.monitor.daily_brief`, and window `counts.orders` and `unfilled_orders`.
+3. Record rolled-back and skipped sessions in `mall["reflections"]`.
+4. Carried over: exit-on-flat (Question 5), gross-exposure cap (Question 3), rebalance band (Question 4).
+
+---
+
 ## 2026-10-25 — A restart no longer journals the last fill a second time
 
 **Scope:** observation (data-integrity fix in the fill journal). No strategy, sizer or risk-middleware change; nothing on the trading path reads `mall["fills"]`.
