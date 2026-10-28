@@ -102,6 +102,50 @@ def _journalled_fill_ids(mall: Mapping) -> set[str]:
         return set()
 
 
+def _fill_qty_by_symbol(
+    mall: Mapping, *, after: "datetime | None", until: datetime
+) -> dict[str, float]:
+    """Signed qty of journalled fills with ``after < ts <= until``, by symbol.
+
+    Fills are deduped by ``order_id`` (a restart could journal one twice).
+    ``after=None`` means no lower bound.
+
+    >>> from datetime import datetime as dt
+    >>> fills = {"fills": {
+    ...     ("r1", "a"): {"order_id": "a", "symbol": "s", "side": "buy", "qty": 2.0,
+    ...                   "ts": "2026-01-01T00:00:01+00:00"},
+    ...     ("r2", "a"): {"order_id": "a", "symbol": "s", "side": "buy", "qty": 2.0,
+    ...                   "ts": "2026-01-01T00:00:01+00:00"},
+    ...     ("r1", "b"): {"order_id": "b", "symbol": "s", "side": "sell", "qty": 0.5,
+    ...                   "ts": "2026-01-01T00:00:02+00:00"},
+    ...     ("r1", "c"): {"order_id": "c", "symbol": "s", "side": "buy", "qty": 9.0,
+    ...                   "ts": "2026-01-01T00:00:09+00:00"}}}
+    >>> _fill_qty_by_symbol(fills, after=dt.fromisoformat("2026-01-01T00:00:00+00:00"),
+    ...                     until=dt.fromisoformat("2026-01-01T00:00:05+00:00"))
+    {'s': 1.5}
+    """
+    out: dict[str, float] = {}
+    seen: set[str] = set()
+    try:
+        rows = list(mall["fills"].values())
+    except Exception:
+        return out
+    for v in rows:
+        if not isinstance(v, dict) or v.get("order_id") in seen:
+            continue
+        try:
+            ts = datetime.fromisoformat(v["ts"])
+            sign = 1.0 if v["side"] == "buy" else -1.0
+            qty = sign * float(v["qty"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (after is not None and ts <= after) or ts > until:
+            continue
+        seen.add(v.get("order_id"))
+        out[v["symbol"]] = out.get(v["symbol"], 0.0) + qty
+    return out
+
+
 @dataclass
 class Runner:
     """Composable application service. All seams are constructor-injected."""
@@ -131,7 +175,14 @@ class Runner:
         This is intentionally read-only on positions — the broker is the
         source of truth, the mall is a journal. If a divergence shows up the
         right response is human investigation, not a silent overwrite.
+
+        Journalled fills since the previous snapshot are netted out first, so
+        the bot's own trades are not drift; each drift record carries the
+        ``explained_qty`` (own fills) and the ``unexplained_qty`` residual.
         """
+        # Taken before reading positions, at full precision: fills up to this
+        # instant are in the broker's positions; later ones count next time.
+        fills_as_of = utc_now()
         broker_positions = self.broker.positions()
         try:
             broker_nav = self.broker.nav()
@@ -146,18 +197,37 @@ class Runner:
                 row["symbol"]: row for row in prev.get("positions", [])
             }
             eps = 1e-9
+            prev_as_of = prev.get("fills_as_of") or prev.get("ts")
+            explained = _fill_qty_by_symbol(
+                self.mall,
+                after=datetime.fromisoformat(prev_as_of) if prev_as_of else None,
+                until=fills_as_of,
+            )
+
+            def _drift(sym_str: str, prev_qty: float, broker_qty: float) -> dict | None:
+                own = explained.get(sym_str, 0.0)
+                residual = broker_qty - (prev_qty + own)
+                if abs(residual) <= eps:
+                    return None
+                return {
+                    "symbol": sym_str,
+                    "prev_qty": prev_qty,
+                    "broker_qty": broker_qty,
+                    "explained_qty": own,
+                    "unexplained_qty": residual,
+                }
+
             for sym, pos in broker_positions.items():
                 prev_qty = float(prev_by_symbol.get(str(sym), {}).get("qty", 0.0))
-                if abs(pos.qty - prev_qty) > eps:
-                    drifts.append({"symbol": str(sym), "prev_qty": prev_qty, "broker_qty": pos.qty})
+                if d := _drift(str(sym), prev_qty, pos.qty):
+                    drifts.append(d)
             # Also flag symbols the journal saw that the broker no longer reports.
+            reported = {str(s) for s in broker_positions}
             for sym_str, prev_row in prev_by_symbol.items():
-                if abs(float(prev_row.get("qty", 0.0))) <= eps:
+                if sym_str in reported or abs(float(prev_row.get("qty", 0.0))) <= eps:
                     continue
-                if not any(str(s) == sym_str for s in broker_positions):
-                    drifts.append(
-                        {"symbol": sym_str, "prev_qty": float(prev_row["qty"]), "broker_qty": 0.0}
-                    )
+                if d := _drift(sym_str, float(prev_row["qty"]), 0.0):
+                    drifts.append(d)
             for d in drifts:
                 log.warning("position_drift", **d, label=snapshot_label)
             # Persist drifts to the mall so the brief / reflection cycle
@@ -176,6 +246,7 @@ class Runner:
 
         snap_ts = utc_now().isoformat(timespec="seconds")
         snapshot = positions_to_snapshot(broker_positions, nav=broker_nav, ts=snap_ts)
+        snapshot["fills_as_of"] = fills_as_of.isoformat()
         try:
             self.mall["positions"][(snap_ts, snapshot_label)] = snapshot
         except (TypeError, KeyError):
