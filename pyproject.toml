@@ -21,11 +21,11 @@ dependencies = [
     "cw>=0.1.1,<0.2",        # CLI dispatch (MIT, zero runtime deps; argh's grammar)
     "pydantic",
     "tomli",                 # pyproject-friendly config loader
-    "typer",                 # nicer help screens; cw is our dispatcher
     "platformdirs",
     # Data & numerics
     "pandas",
     "numpy",
+    "scipy",                 # pandas Series.corr(method="spearman") in hedger.research.factors
     "pyarrow",               # parquet on disk
     "duckdb",                # zero-config analytical store
     # Storage facade
@@ -34,13 +34,6 @@ dependencies = [
     "ccxt",                  # crypto exchanges
     "alpaca-py",             # US stocks/ETF/options/crypto
     "yfinance",              # free historical bars for quick research
-    # Strategy / backtesting
-    # Floor pinned: vectorbt pulls in numba, and numba caps numpy (<2.5). Left
-    # un-versioned, the resolver prefers the newest numpy and instead backtracks
-    # vectorbt to 0.23.3 -> numba 0.53.1 -> llvmlite 0.36.0, which refuses to
-    # build on Python >= 3.10 ("only versions >=3.6,<3.10 are supported") and
-    # breaks the install on every Python this project supports (>=3.11).
-    "vectorbt>=1.0",         # vectorised research
     # LLM
     "anthropic",
     # Observability
@@ -61,6 +54,11 @@ dev = [
 ]
 nautilus = ["nautilus_trader"]   # heavier; opt-in
 research = [
+    # Vectorised research. Floor pinned: vectorbt pulls in numba, and numba caps numpy
+    # (<2.5). Left un-versioned, the resolver prefers the newest numpy and instead
+    # backtracks vectorbt to 0.23.3 -> numba 0.53.1 -> llvmlite 0.36.0, which refuses to
+    # build on Python >= 3.10. Optional, so the core install carries no numba/llvmlite.
+    "vectorbt>=1.0",
     # Plotting / ML scaffolding
     "matplotlib",
     "plotly",

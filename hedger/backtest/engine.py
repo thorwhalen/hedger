@@ -164,7 +164,8 @@ def backtest_vectorbt(*args, **kwargs):
     fixture before being preferred for promote-decision evidence.
     """
     raise NotImplementedError(
-        "Vectorbt backtester is a deferred extension. "
+        "Vectorbt backtester is a deferred extension (vectorbt itself is in the "
+        "optional extra: `pip install hedger[research]`). "
         "Use `hedger.backtest.sweep.param_sweep(strategy, grid, bars)` for "
         "parameter sweeps using the simple engine, or implement this "
         "function and add a benchmark comparing the two on the same data."
