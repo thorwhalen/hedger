@@ -49,9 +49,7 @@ def _in_window(record_ts: str | None, start: datetime, end: datetime) -> bool:
     return bool(ts and start <= ts <= end)
 
 
-_ISO_TS = re.compile(
-    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?"
-)
+_ISO_TS = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?")
 
 
 def _order_tick_ts(order: Mapping) -> str | None:
