@@ -6,6 +6,33 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-11-01 — The brief counts only today's orders and fills
+
+**Scope:** observation (reflection brief). No strategy, sizer, broker or risk-middleware change; nothing on the trading path reads the brief.
+
+**Changed:** `hedger/reflection/monitor.py` (new `_order_tick_ts`, `_order_in_window`, `_dedupe_by_order_id`, each with doctests; `daily_brief` windows `orders` by the tick timestamp embedded in `client_order_id` and dedupes window fills by `order_id`), `tests/test_brief.py` (two tests: a May order is neither counted nor listed as unfilled; a fill journalled twice counts once in `counts`, `by_symbol` and the cash change). Both fail on the old code; the existing brief tests pass unchanged.
+
+**Why:** TODO 2 of 2026-10-28, carried since 2026-10-11. Orders have no top-level `ts`, so `daily_brief` took every row of `orders.jsonl`: today's `counts.orders` was 257 (all-time) and `unfilled_orders` listed 312 orders, the first 20 of them from May, because any all-time order whose symbol and side had no fill today was flagged. Every session had to discount both fields by hand. The runner builds ids as `run_id:tick_ts:symbol`, so the last ISO timestamp in the id is the submit tick. Orders whose id has none are kept (fail-open), so an odd id can never hide an order. Fill dedupe guards against the pre-2026-10-25 restart duplicates, which inflated fill counts and cash change on restart days.
+
+**Metrics (90-day backtest, sma_crossover, SPY/QQQ/BTC-USD, 1h):** identical by construction (the brief is not on the backtest path): sharpe=0.226, mdd=-2.59%, n_trades=3151. Lower than 2026-10-28's 0.374 because the 90-day window moved, not because of a code change. `pytest -q` green. Replaying today's brief: `counts.orders` 257 → 2, `unfilled_orders` 312 → 0 (both of today's orders filled); signals, decisions, fills and cash change unchanged (23 / 22 / 2 / -158.35).
+
+**Learned today (from the brief and the journals):**
+- **`hedger serve` has not restarted since 2026-10-24 06:34**, so the 2026-10-28 drift change (PR #16) is not running: today's two `drifts.jsonl` rows have no `explained_qty` and are again just the bot's own BTC fills. This change also only takes effect on restart, since `serve` writes the brief.
+- The BTC in-kind fee is confirmed again: the 00:34 buy of 0.002776216 BTC grew the position by 0.002769274 (99.75%); the 17:34 sell of 0.000731542 matches exactly.
+- 23 signals (all `sma_crossover`, all BTC), 22 decisions, 2 fills: hourly BTC rebalances to the 10% cap. SPY/QQQ produced no signals in the window (Sunday). `approx_realized_cash_change = -158` is net cash for those rebalances, not a loss. BTC `avg_price` is still negative (-620,254, Alpaca's cost-basis artefact).
+
+**Watch tomorrow:**
+- After a restart, `counts.orders` should be a small number close to `counts.fills`, and `unfilled_orders` should be empty or hold only today's orders. A non-empty list then means a real stuck order.
+- After a restart, `position_drifts` should list only BTC buys with `unexplained_qty` around -0.25% of `explained_qty`.
+
+**TODO (next cycles, in priority order):**
+1. Journal the in-kind crypto fee in `AlpacaBroker` fills (carried from 2026-10-28 TODO 1). Alpaca's order object carries no fee; the source is account activities (`CFEE`), so this needs a mock-based test of that path in `tests/test_alpaca_unit.py`.
+2. Record rolled-back and skipped sessions in `mall["reflections"]`.
+3. Brief: flag `avg_price < 0` positions.
+4. Carried over: exit-on-flat (Question 5), gross-exposure cap (Question 3), rebalance band (Question 4).
+
+---
+
 ## 2026-10-28 — Position drift nets out the bot's own fills
 
 **Scope:** observation (drift journal). No strategy, sizer, broker or risk-middleware change; nothing on the trading path reads `mall["drifts"]`.

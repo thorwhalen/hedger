@@ -9,14 +9,15 @@ orchestrator and the reflection-cycle skill):
   {
     "window": {"start": iso, "end": iso},
     "counts": {"signals": int, "decisions": int, "fills": int,
-               "orders": int, "news": int},
+               "orders": int, "news": int},   # all windowed; fills
+                                              # deduped by order_id
     "signals_by_strategy": {strategy_name: count},
     "by_symbol": {
         "SYM": {"signals": int, "fills": int, "buy_qty": float,
                 "sell_qty": float, "notional_traded": float}
     },
     "approx_realized_cash_change": float,
-    "unfilled_orders":  [{...}],   # orders with no matching fill in window
+    "unfilled_orders":  [{...}],   # in-window orders with no fill in window
     "position_drifts":  [{...}],   # recent reconciliation drifts
     "latest_positions": [...],     # last positions snapshot, if any
     "fills_sample":     [...],
@@ -28,6 +29,7 @@ orchestrator and the reflection-cycle skill):
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Mapping
@@ -45,6 +47,67 @@ def _in_window(record_ts: str | None, start: datetime, end: datetime) -> bool:
         return False
     ts = _coerce_ts(record_ts)
     return bool(ts and start <= ts <= end)
+
+
+_ISO_TS = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?"
+)
+
+
+def _order_tick_ts(order: Mapping) -> str | None:
+    """Return the tick timestamp embedded in an order's ``client_order_id``.
+
+    The runner builds ids as ``f"{run_id}:{tick_ts}:{symbol}"``, where both
+    ``run_id`` and ``tick_ts`` are ISO timestamps, so the tick is the *last*
+    ISO timestamp in the id. Returns ``None`` when the id carries none.
+
+    >>> _order_tick_ts({"client_order_id":
+    ...     "2026-10-24T06:34:50+00:00:2026-11-01T00:34:53+00:00:default:BTC/USD"})
+    '2026-11-01T00:34:53+00:00'
+    >>> _order_tick_ts({"client_order_id": "cid-spy"}) is None
+    True
+    """
+    found = _ISO_TS.findall(str(order.get("client_order_id") or ""))
+    return found[-1] if found else None
+
+
+def _order_in_window(order: Mapping, start: datetime, end: datetime) -> bool:
+    """True when the order was submitted in ``[start, end]``.
+
+    Orders whose submit time cannot be read are kept (fail-open), so an
+    unusual id never hides an order from the brief.
+
+    >>> s, e = datetime(2026, 11, 1, tzinfo=timezone.utc), datetime(2026, 11, 2, tzinfo=timezone.utc)
+    >>> _order_in_window({"client_order_id": "r:2026-05-07T19:00:57+00:00:default:SPY"}, s, e)
+    False
+    >>> _order_in_window({"client_order_id": "r:2026-11-01T17:34:53+00:00:default:SPY"}, s, e)
+    True
+    >>> _order_in_window({"client_order_id": "cid-spy"}, s, e)
+    True
+    """
+    ts = _order_tick_ts(order)
+    return ts is None or _in_window(ts, start, end)
+
+
+def _dedupe_by_order_id(fills: list[dict]) -> list[dict]:
+    """Keep the first journalled row per broker ``order_id``.
+
+    Restarts before 2026-10-25 journalled some fills twice under a new run
+    id; counting both inflates fill counts, notional and cash change.
+
+    >>> _dedupe_by_order_id([{"order_id": "a"}, {"order_id": "a"}, {"order_id": "b"}, {}])
+    [{'order_id': 'a'}, {'order_id': 'b'}, {}]
+    """
+    seen: set = set()
+    out = []
+    for f in fills:
+        oid = f.get("order_id")
+        if oid is not None:
+            if oid in seen:
+                continue
+            seen.add(oid)
+        out.append(f)
+    return out
 
 
 def _safe_values(mall: Mapping, slot: str):
@@ -73,8 +136,11 @@ def daily_brief(mall: Mapping, *, day: datetime | None = None) -> dict:
 
     signals = [v for v in _safe_values(mall, "signals") if _in_window(v.get("ts"), start, end)]
     decisions = [v for v in _safe_values(mall, "decisions") if _in_window(v.get("ts"), start, end)]
-    orders = [v for v in _safe_values(mall, "orders")]  # orders may not have a top-level ts
-    fills = [v for v in _safe_values(mall, "fills") if _in_window(v.get("ts"), start, end)]
+    # Orders have no top-level ts; their submit tick is in the client_order_id.
+    orders = [v for v in _safe_values(mall, "orders") if _order_in_window(v, start, end)]
+    fills = _dedupe_by_order_id(
+        [v for v in _safe_values(mall, "fills") if _in_window(v.get("ts"), start, end)]
+    )
     news = [v for v in _safe_values(mall, "news") if _in_window(v.get("created_at"), start, end)]
 
     # Realised cash change (rough: doesn't track lots).
@@ -118,7 +184,7 @@ def daily_brief(mall: Mapping, *, day: datetime | None = None) -> dict:
     for ord_dict in orders:
         # Orders are keyed by (run_id, client_order_id); the value is the
         # serialised Order dict. We only flag unfilled where:
-        # (a) the order's client_order_id is in our window (best-effort), and
+        # (a) the order was submitted in our window (filtered above), and
         # (b) we have no fill for the same symbol+side within the window.
         if (ord_dict["symbol"], ord_dict["side"]) not in fill_symbols_recent:
             unfilled.append(
