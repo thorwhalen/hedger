@@ -128,3 +128,35 @@ def test_write_brief_round_trip():
     assert out.exists()
     payload = json.loads(out.read_text())
     assert payload["counts"]["signals"] == 3
+
+
+def test_brief_windows_orders_by_tick_in_client_order_id():
+    """Orders from long ago are neither counted nor listed as unfilled."""
+    m = mall(tempfile.mkdtemp())
+    run = "2026-05-07T18:00:57+00:00"
+    old_cid = f"{run}:2026-05-07T19:00:57+00:00:default:QQQ"
+    m["orders"][(run, old_cid)] = {
+        "symbol": "default:QQQ", "side": "buy", "qty": 14.0, "client_order_id": old_cid,
+    }
+    new_cid = f"{run}:{_now_iso(2)}:default:QQQ"
+    m["orders"][(run, new_cid)] = {
+        "symbol": "default:QQQ", "side": "sell", "qty": 1.0, "client_order_id": new_cid,
+    }
+    b = daily_brief(m)
+    assert b["counts"]["orders"] == 1
+    assert [o["client_order_id"] for o in b["unfilled_orders"]] == [new_cid]
+
+
+def test_brief_counts_a_twice_journalled_fill_once():
+    """A fill re-journalled under a restart's run id is one fill, not two."""
+    m = mall(tempfile.mkdtemp())
+    row = {
+        "ts": _now_iso(1), "order_id": "broker-id-1", "symbol": "default:BTC/USD",
+        "side": "buy", "qty": 0.01, "price": 80_000.0, "fee": 0.0, "venue": "alpaca",
+    }
+    m["fills"][("run-1", "broker-id-1")] = row
+    m["fills"][("run-2", "broker-id-1")] = row
+    b = daily_brief(m)
+    assert b["counts"]["fills"] == 1
+    assert b["by_symbol"]["default:BTC/USD"]["fills"] == 1
+    assert b["approx_realized_cash_change"] == -800.0
