@@ -283,7 +283,7 @@ def mall(root: str | Path | None = None) -> dict[str, MutableMapping]:
     >>> import tempfile
     >>> m = mall(tempfile.mkdtemp())
     >>> sorted(m.keys())
-    ['bars', 'decisions', 'drifts', 'fills', 'news', 'orders', 'positions', 'reflections', 'signals']
+    ['bars', 'decisions', 'drifts', 'fees', 'fills', 'news', 'orders', 'positions', 'reflections', 'signals']
     """
     if root is None:
         from hedger._paths import data_dir
@@ -296,6 +296,7 @@ def mall(root: str | Path | None = None) -> dict[str, MutableMapping]:
         "decisions": JsonlStore(root / "decisions.jsonl"),
         "orders": JsonlStore(root / "orders.jsonl"),
         "fills": JsonlStore(root / "fills.jsonl"),
+        "fees": JsonlStore(root / "fees.jsonl"),  # broker fee activities, keyed by id
         "news": JsonlStore(root / "news.jsonl"),
         "positions": JsonlStore(root / "positions.jsonl"),
         "drifts": JsonlStore(root / "drifts.jsonl"),

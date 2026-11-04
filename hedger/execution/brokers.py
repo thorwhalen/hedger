@@ -199,6 +199,47 @@ def _symbol_from_alpaca(raw_symbol: str, raw_asset_class: str) -> Symbol:
     return Symbol(ticker=ticker, asset_class=asset_class)
 
 
+_FEE_ACTIVITY_TYPES = ("CFEE", "FEE")  # crypto pair fee; regulatory (CAT/REG/TAF)
+
+
+def fee_record_from_activity(activity: Mapping[str, Any]) -> dict:
+    """Normalise one Alpaca fee account activity into a journal row.
+
+    Alpaca does not put fees on orders. A crypto buy pays its 0.25% in the
+    asset (``qty < 0``, ``net_amount == 0``); a crypto sell, and equity
+    regulatory fees, pay in USD (``net_amount < 0``, no ``qty``). Activities
+    carry no ``order_id``, so rows are journalled by activity ``id``, not
+    attached to fills. ``usd`` is the fee's signed USD value either way.
+
+    >>> r = fee_record_from_activity({"id": "a1", "activity_type": "CFEE",
+    ...     "created_at": "2026-11-02T17:35:00Z", "symbol": "BTCUSD",
+    ...     "qty": "-0.000002", "price": "77000", "net_amount": "0"})
+    >>> r["symbol"], r["qty"], round(r["usd"], 3)
+    ('default:BTC/USD', -2e-06, -0.154)
+    >>> r = fee_record_from_activity({"id": "a2", "activity_type": "FEE",
+    ...     "activity_sub_type": "CAT", "net_amount": "-0.01"})
+    >>> r["symbol"], r["qty"], r["usd"], r["sub_type"]
+    (None, 0.0, -0.01, 'CAT')
+    """
+    raw_symbol = activity.get("symbol")
+    qty = float(activity.get("qty") or 0.0)
+    price = float(activity.get("price") or 0.0)
+    net = float(activity.get("net_amount") or 0.0)
+    asset_class = "crypto" if activity.get("activity_type") == "CFEE" else ""
+    return {
+        "id": str(activity["id"]),
+        "activity_type": activity.get("activity_type"),
+        "sub_type": activity.get("activity_sub_type"),
+        "ts": activity.get("created_at") or activity.get("date"),
+        "symbol": str(_symbol_from_alpaca(raw_symbol, asset_class)) if raw_symbol else None,
+        "qty": qty,
+        "price": price,
+        "net_amount": net,
+        "usd": net if net else qty * price,
+        "description": activity.get("description"),
+    }
+
+
 @dataclass
 class AlpacaBroker:
     """Live or paper Alpaca via the official SDK.
@@ -396,6 +437,23 @@ class AlpacaBroker:
             self._fill_watermark = watermark
         for order_id in seen_order_ids:
             self._seen_fills.add(str(order_id))
+
+    def fees(self, *, lookback: timedelta = timedelta(days=2)) -> Iterable[dict]:
+        """Yield fee account activities (crypto ``CFEE``, regulatory ``FEE``).
+
+        Covers the last ``lookback`` (newest first, one page). Callers dedupe
+        by ``id``: overlapping windows are expected. Fill rows keep
+        ``fee=0.0`` because Alpaca reports fees only as activities; see
+        :func:`fee_record_from_activity` for the row shape.
+        """
+        after = (utc_now() - lookback).isoformat()
+        params = {
+            "activity_types": ",".join(_FEE_ACTIVITY_TYPES),
+            "after": after,
+            "page_size": 100,
+        }
+        for activity in self._client.get("/account/activities", params) or []:
+            yield fee_record_from_activity(activity)
 
     def start_fill_stream(
         self,

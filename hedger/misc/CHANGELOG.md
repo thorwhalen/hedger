@@ -6,6 +6,33 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-11-04 — Alpaca fees are journalled in `mall["fees"]`
+
+**Scope:** observation (new fee journal). No strategy, sizer or risk-middleware change; nothing on the trading path reads `mall["fees"]`, and fill rows are unchanged.
+
+**Changed:** `hedger/execution/brokers.py` (new `fee_record_from_activity`, with doctests; `AlpacaBroker.fees(*, lookback=2 days)` reads `GET /account/activities?activity_types=CFEE,FEE`), `hedger/live/runner.py` (`Runner.journal_fees()`, called after the fill drain in `tick()`; fail-soft; the tick summary gains `n_fees`), `hedger/data/stores.py` (new `fees` slot, `fees.jsonl`), `tests/test_fees.py` (three tests: request shape and normalisation from real paper-account activity shapes; overlapping windows journal each activity once; a failing fetch returns 0 and brokers without `fees()` are skipped). All three fail on the old code.
+
+**Why:** TODO 1 of 2026-11-01, carried since 2026-10-28: every fill is journalled with `fee: 0.0`, so fill-based P&L and tax records understate crypto cost. A read-only look at the paper account settled how Alpaca reports fees, which the earlier sessions had only guessed at: fees are **account activities, never fields on the order**. A crypto buy pays in the asset (`CFEE`, `qty < 0`, `net_amount = 0`; this is the 0.25% drift residual seen since 2026-10-18). A crypto sell pays in USD (`CFEE`, `net_amount < 0`, no symbol). Equities pay small regulatory fees (`FEE`, sub-type `CAT`/`REG`), posted the next day. Activities carry **no `order_id`**, a single fill can have several of them, and their `created_at` is not always close to the fill. So matching them to fills would be a guess. They are journalled as their own stream, keyed by activity id, with `usd` as the signed USD value either way. On a matched two-day window, crypto fees came to about 0.22% of BTC fill notional, consistent with the 0.25% rate.
+
+**Metrics (90-day backtest, sma_crossover, SPY/QQQ/BTC-USD, 1h):** identical by construction (the backtest drives `PaperBroker`, which has no `fees()`), confirmed: before and after both sharpe=0.240, mdd=-2.71%, n_trades=3000. `pytest -q` green (212 passed). Smoke test of `AlpacaBroker.fees()` against the paper account (read-only): 15 `CFEE` and 1 `FEE` rows over the 2-day lookback, all normalised.
+
+**Learned today (from the brief and the journals):**
+- **`hedger serve` still runs the 2026-10-24 tree.** The 2026-10-28 drift netting (PR #16) and the 2026-11-01 brief windowing are therefore not live. Today's brief again lists all-time `counts.orders` (266) and May orders as `unfilled_orders`, and each of the 7 `position_drifts` is the bot's own fill on that tick (same qty, to the last digit). Tonight's fee journal also needs that restart.
+- 53 signals (all `sma_crossover`, all scoring 1.0), 26 decisions, 7 fills: BTC rebalances back to the 10% cap hourly, plus one SPY trim and one QQQ top-up during the session. No losing trades as such; the cash change is rebalancing flow.
+- BTC `avg_price` is still negative (Alpaca's cost-basis artefact).
+
+**Watch tomorrow:**
+- After a restart, `fees.jsonl` should gain one row per new `CFEE`/`FEE` activity. Each tick summary's `n_fees` should be small, and 0 on ticks with no trades. A `fee_fetch_failed` warning in the logs means the activities endpoint is refusing the call; the tick still completes.
+- The first tick after the restart backfills the last two days of fee activities. That is expected, and rows are never duplicated afterwards.
+
+**TODO (next cycles, in priority order):**
+1. Brief: sum `mall["fees"]` over the window (total `usd`, and asset `qty` by symbol), so the daily cost is visible, and let `position_drifts` treat a BTC-buy residual matching a `CFEE` asset fee as explained.
+2. Record rolled-back and skipped sessions in `mall["reflections"]`.
+3. Brief: flag `avg_price < 0` positions.
+4. Carried over: exit-on-flat (Question 5), gross-exposure cap (Question 3), rebalance band (Question 4).
+
+---
+
 ## 2026-11-01 — The brief counts only today's orders and fills
 
 **Scope:** observation (reflection brief). No strategy, sizer, broker or risk-middleware change; nothing on the trading path reads the brief.
