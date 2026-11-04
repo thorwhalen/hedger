@@ -315,6 +315,30 @@ class Runner:
         self._last_news_fetch = now
         return ingested
 
+    def journal_fees(self) -> int:
+        """Best-effort: copy new broker fee activities into mall["fees"].
+
+        Observation only; nothing on the trading path reads the journal. Runs
+        when the broker exposes ``fees()`` (Alpaca; PaperBroker fees are
+        already on its fills) and the mall has a ``fees`` slot. Rows are keyed
+        by activity id, so the overlapping lookback never journals one twice.
+        A failed fetch is logged and returns 0 instead of failing the tick.
+        """
+        fetch = getattr(self.broker, "fees", None)
+        if not callable(fetch) or "fees" not in self.mall:
+            return 0
+        store = self.mall["fees"]
+        n = 0
+        try:
+            for rec in fetch():
+                if rec["id"] in store:
+                    continue
+                store[rec["id"]] = rec
+                n += 1
+        except Exception as e:
+            log.warning("fee_fetch_failed", error=f"{type(e).__name__}: {e}")
+        return n
+
     def news_context(self, symbols: list[Symbol], *, hours: int = 24) -> dict:
         """Build the {symbol_str: [headlines]} mapping llm_news consumes."""
         try:
@@ -565,6 +589,7 @@ class Runner:
         for f in self.broker.fills():
             self.mall["fills"][(self.run_id, f.order_id)] = fill_to_dict(f)
             n_fills += 1
+        n_fees = self.journal_fees()
 
         nav_after = self.broker.nav()
 
@@ -601,6 +626,7 @@ class Runner:
             "n_orders_submitted": n_submitted,
             "n_skipped_market_closed": n_skipped_market_closed,
             "n_fills": n_fills,
+            "n_fees": n_fees,
             "nav_before": nav,
             "nav_after": nav_after,
         }
