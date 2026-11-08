@@ -285,8 +285,9 @@ class Runner:
         """Best-effort: pull fresh news into mall["news"]. Returns # ingested.
 
         Skips if no news_source is configured or if last fetch was within
-        ``news_refresh_minutes``. Idempotent: persisted by news id, so
-        re-runs don't duplicate.
+        ``news_refresh_minutes``. Idempotent: persisted by news id, and ids
+        already in the store are skipped, so the overlapping 24h lookback
+        neither re-appends rows to the jsonl file nor counts them again.
         """
         if self.news_source is None:
             return 0
@@ -300,14 +301,19 @@ class Runner:
         if not tickers:
             return 0
         ingested = 0
+        store = self.mall["news"]
         try:
-            for item in self.news_source.fetch(
-                tickers,
-                start=now - timedelta(hours=24),
-                limit=50,
+            for i, item in enumerate(
+                self.news_source.fetch(
+                    tickers,
+                    start=now - timedelta(hours=24),
+                    limit=50,
+                )
             ):
-                key = (item.get("created_at") or now.isoformat(), str(item.get("id") or ingested))
-                self.mall["news"][key] = item
+                key = (item.get("created_at") or now.isoformat(), str(item.get("id") or i))
+                if key in store:
+                    continue
+                store[key] = item
                 ingested += 1
         except Exception as e:
             log.warning("news_fetch_failed", error=f"{type(e).__name__}: {e}")
