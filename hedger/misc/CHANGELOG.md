@@ -6,6 +6,34 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-11-08 — The hourly news refresh no longer re-appends known articles
+
+**Scope:** observation (data-integrity fix in the news journal). No strategy, sizer, broker or risk-middleware change; `news_context` reads the same keyed mapping as before.
+
+**Changed:** `hedger/live/runner.py` (`Runner.refresh_news` skips keys already in `mall["news"]`, and its return value now counts only new articles), `tests/test_llm_news.py` (one test: three overlapping refreshes leave exactly one jsonl row per article id and count only new ids). The test fails on the old code.
+
+**Why:** A surprise in the journals today, not a carried TODO. `news.jsonl` is 34 MB with 63,921 rows but only 4,300 distinct article ids; the most-repeated article is written 32 times. `refresh_news` runs every hour over a 24-hour lookback and wrote every item back. `JsonlStore.__setitem__` appends a line on every write, even when the key already exists. Reads dedupe by key, so `news_context`, `llm_news` and the brief saw correct data. But the file grew about 15× faster than the news itself, every process start re-parses all of it, and the tick summary's `n_news_ingested` reported re-fetched articles as new. Same pattern as `journal_fees`, which already checks `id in store`.
+
+**Metrics (90-day backtest, sma_crossover, SPY/QQQ/BTC-USD, 1h):** identical by construction (the backtest does not refresh news), confirmed: before and after both sharpe=0.015, mdd=-3.57%, n_trades=2949. Lower than 2026-11-04's 0.240 because the 90-day window moved. `pytest -q` green (213 passed).
+
+**Learned today (from the brief and the journals):**
+- **`hedger serve` still runs the 2026-10-24 tree** (PID started 2026-10-24 06:34). So PR #16 (drift netting), #18 (brief windowing) and #19 (fee journal) are still not live, and there is no `fees.jsonl` yet. That is why `counts.orders` is 274 (all-time) and `unfilled_orders` again lists May orders. The restart is tracked in the owner's private tracker.
+- A quiet weekend: 23 signals (all `sma_crossover`, all BTC, score 1.0), 1 decision (BTC to the 10% cap at 23:00), 0 fills. The rebalance fell under the dust threshold. Positions are unchanged since Friday. No news in the window: the last journalled article is from 2026-11-07 20:23.
+- BTC `avg_price` is still negative (Alpaca's cost-basis artefact).
+
+**Watch tomorrow:**
+- After a restart, `news.jsonl` should grow by roughly the number of new articles per hour (tens of rows), not by about 50 rows per refresh regardless. `n_news_ingested` in the tick summary should often be 0 off-hours.
+- The existing 59,600 duplicate rows stay in the file. Compacting is optional for the owner: `JsonlStore(path)._flush()` rewrites one row per key. Do it only while `serve` is stopped, so the rewrite doesn't race the hourly append.
+
+**TODO (next cycles, in priority order):**
+1. Brief: sum `mall["fees"]` over the window and treat a BTC-buy drift residual that matches a `CFEE` asset fee as explained (carried from 2026-11-04; needs the restart first to have data).
+2. Record rolled-back and skipped sessions in `mall["reflections"]`.
+3. Brief: flag `avg_price < 0` positions.
+4. Consider making `JsonlStore.__setitem__` skip the append when the value is unchanged, so no caller can repeat this bug. That touches every store, so it needs its own session and tests.
+5. Carried over: exit-on-flat (Question 5), gross-exposure cap (Question 3), rebalance band (Question 4).
+
+---
+
 ## 2026-11-04 — Alpaca fees are journalled in `mall["fees"]`
 
 **Scope:** observation (new fee journal). No strategy, sizer or risk-middleware change; nothing on the trading path reads `mall["fees"]`, and fill rows are unchanged.

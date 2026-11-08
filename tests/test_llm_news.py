@@ -148,6 +148,27 @@ def test_news_context_dedupes_via_news_id():
     assert ctx["default:SPY"] == ["SPY rallies"]
 
 
+def test_refresh_news_does_not_rewrite_known_items_to_disk():
+    """Hourly refreshes overlap a 24h lookback; known ids must not be re-appended.
+
+    ``JsonlStore.__setitem__`` appends a line on every write, so re-setting a
+    known key grew the live ``news.jsonl`` ~15x (63,921 rows for 4,300 ids).
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    old = {"id": 1, "headline": "old", "summary": "", "symbols": ["SPY"],
+           "created_at": now, "url": None, "author": None}
+    new = {**old, "id": 2, "headline": "new"}
+    src = _FakeNewsSource([old])
+    runner = _runner_for_news(src)
+    sym = Symbol("SPY", AssetClass.EQUITY)
+    assert runner.refresh_news([sym]) == 1
+    src.items = [old, new]
+    assert runner.refresh_news([sym]) == 1  # only the new id counts
+    assert runner.refresh_news([sym]) == 0
+    path = runner.mall["news"].path
+    assert len(path.read_text().splitlines()) == 2
+
+
 # ---------------------------------------------------------------------------
 # Live integration test — real Alpaca news + real Anthropic Haiku call
 # ---------------------------------------------------------------------------
