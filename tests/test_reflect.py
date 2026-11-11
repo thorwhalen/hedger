@@ -101,6 +101,10 @@ def test_reflect_rolls_back_when_validation_fails(temp_repo):
         res = reflect(repo=temp_repo, cfg=cfg, mall=m)
     assert res["status"] == "rolled_back"
     assert res["tag"].startswith("reflect-")
+    # A rolled-back session is recorded too, so the next session can see it.
+    (rec,) = m["reflections"].values()
+    assert rec["status"] == "rolled_back" and rec["tag"] == res["tag"]
+    assert rec["returncode"] == 0
 
 
 def test_reflect_records_session_when_validation_passes(temp_repo):
@@ -115,6 +119,7 @@ def test_reflect_records_session_when_validation_passes(temp_repo):
         res = reflect(repo=temp_repo, cfg=cfg, mall=m)
     assert res["status"] == "ok"
     assert res["record"]["returncode"] == 0
+    assert res["record"]["status"] == "ok"
     assert len(m["reflections"]) == 1
 
 
@@ -209,6 +214,8 @@ def test_reflect_handles_timeout(temp_repo):
         res = reflect(repo=temp_repo, cfg=cfg, mall=m)
     assert res["status"] == "timeout"
     assert res["tag"].startswith("reflect-")
+    (rec,) = m["reflections"].values()
+    assert rec["status"] == "timeout" and rec["tag"] == res["tag"]
 
 
 def test_child_env_fills_home_when_missing(monkeypatch):
@@ -297,8 +304,25 @@ def test_reflect_skips_session_when_snapshot_commit_fails(temp_repo):
         res = reflect(repo=temp_repo, cfg=_cfg(), mall=m, notifier=_Spy())
     assert res["status"] == "snapshot_failed"
     assert spawned == []
+    (rec,) = m["reflections"].values()
+    assert rec["status"] == "snapshot_failed" and "label" in rec
     assert notes and notes[0][0] == "error"
     # No tag was placed on the stale commit either.
     tags = subprocess.run(["git", "tag", "-l", "reflect-*"], cwd=temp_repo,
                           capture_output=True, text=True, check=True)
     assert tags.stdout.strip() == ""
+
+
+def test_reflect_outcome_survives_a_failing_reflections_store(temp_repo):
+    """Recording is fail-soft: a broken store must not mask a rollback."""
+    class _Broken(dict):
+        def __setitem__(self, k, v): raise OSError("disk full")
+    m = dict(mall(temp_repo / ".hedger"))
+    m["reflections"] = _Broken()
+    ok_proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    with patch("hedger.reflection.orchestrator.subprocess.run",
+               side_effect=_patch_only_claude(lambda *a, **k: ok_proc)), \
+         patch("hedger.reflection.orchestrator._validation_passed",
+               return_value=False):
+        res = reflect(repo=temp_repo, cfg=_cfg(), mall=m)
+    assert res["status"] == "rolled_back"
