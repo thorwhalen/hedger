@@ -191,6 +191,7 @@ def reflect(
         # Without a snapshot commit a rollback would destroy uncommitted work: don't run.
         log.error("snapshot_failed", cmd=e.cmd, stderr=(e.stderr or "")[-1000:])
         notifier.notify("error", "reflection skipped: snapshot commit failed", label=label)
+        _record_session(mall, status="snapshot_failed", label=label)
         return {"status": "snapshot_failed", "brief": str(brief_path)}
     log.info("reflection_start", repo=str(repo), tag=tag, brief=str(brief_path))
 
@@ -232,9 +233,11 @@ def reflect(
         log.warning("claude_code_timeout")
         rollback(repo, tag)
         notifier.notify("warning", "reflection rolled back: timeout", tag=tag)
+        _record_session(mall, status="timeout", tag=tag)
         return {"status": "timeout", "tag": tag}
     except FileNotFoundError:
         log.error("claude_code_not_installed", cmd=cfg.reflection.claude_code_cmd)
+        _record_session(mall, status="not_installed", tag=tag)
         return {"status": "not_installed"}
 
     # TODO(thorwhalen/p_fin#1): streaming-JSON cost kill-switch. Today
@@ -269,19 +272,50 @@ def reflect(
             "reflection rolled back: pytest failed",
             tag=tag,
         )
-        return {"status": "rolled_back", "tag": tag, "cost_usd": cost_usd}
+        record = _record_session(
+            mall,
+            status="rolled_back",
+            tag=tag,
+            returncode=proc.returncode,
+            cost_usd=cost_usd,
+            cost_over_cap=cost_over,
+            summary_tail=(proc.stdout or "")[-500:],
+        )
+        return {"status": "rolled_back", "tag": tag, "cost_usd": cost_usd, "record": record}
 
-    # Persist a structured record of this session.
-    record = {
-        "ts": datetime.now(tz=timezone.utc).isoformat(),
-        "tag": tag,
-        "returncode": proc.returncode,
-        "cost_usd": cost_usd,
-        "cost_over_cap": cost_over,
-        "summary_tail": (proc.stdout or "")[-500:],
-    }
-    mall["reflections"][(record["ts"][:10], "session")] = record
+    record = _record_session(
+        mall,
+        status="ok",
+        tag=tag,
+        returncode=proc.returncode,
+        cost_usd=cost_usd,
+        cost_over_cap=cost_over,
+        summary_tail=(proc.stdout or "")[-500:],
+    )
     return {"status": "ok", "tag": tag, "cost_usd": cost_usd, "record": record}
+
+
+def _record_session(mall: Mapping, *, status: str, **fields) -> dict:
+    """Persist one reflection session to ``mall['reflections']``, whatever its outcome.
+
+    Until 2026-11-11 only sessions that passed the pytest gate were recorded,
+    so a rollback (like 2026-10-14's), a timeout or a skipped snapshot left no
+    trace for the next session to read. Every exit of :func:`reflect` except
+    ``dry_run`` now records a row keyed ``(date, "session")`` with a
+    ``status``. Fail-soft: a store error is logged, never raised, so recording
+    cannot change the outcome (in particular, it cannot block a rollback).
+
+    >>> m = {"reflections": {}}
+    >>> r = _record_session(m, status="rolled_back", tag="reflect-x", cost_usd=1.0)
+    >>> r["status"], r["tag"], list(m["reflections"].values())[0] is r
+    ('rolled_back', 'reflect-x', True)
+    """
+    record = {"ts": datetime.now(tz=timezone.utc).isoformat(), "status": status, **fields}
+    try:
+        mall["reflections"][(record["ts"][:10], "session")] = record
+    except Exception as e:  # noqa: BLE001 — recording must never mask the session outcome
+        log.error("reflection_record_failed", status=status, error=repr(e))
+    return record
 
 
 def _extract_cost_usd(stdout: str | None) -> float | None:

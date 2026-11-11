@@ -6,6 +6,33 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-11-11 — Every reflection outcome is recorded, not only the passing ones
+
+**Scope:** observation (reflection orchestrator). No strategy, sizer, broker or risk-middleware change; nothing on the trading path reads `mall["reflections"]`.
+
+**Changed:** `hedger/reflection/orchestrator.py` (new `_record_session`, with doctest; `reflect()` now writes a row with a `status` field on every exit except `dry_run`: `ok`, `rolled_back`, `timeout`, `not_installed`, `snapshot_failed`. Rolled-back rows keep `returncode`, `cost_usd`, `cost_over_cap` and `summary_tail`. Recording is fail-soft, so a store error is logged and never masks a rollback.) `tests/test_reflect.py` (the rollback, timeout and snapshot-failure tests now assert their record, the passing test asserts `status == "ok"`, and one new test shows a broken `reflections` store does not change a rollback's outcome). Four of those assertions fail on the old code.
+
+**Why:** TODO 2, carried since 2026-10-21. Only sessions that passed the pytest gate were ever recorded. The 2026-10-14 rollback left no trace in `reflections.jsonl` and had to be reconstructed from the git reflog. A cost overrun on a rolled-back session was also invisible, because the cost was parsed and then dropped. The key stays `(date, "session")`, so existing readers are unaffected; rows written before today have no `status`, and they were all passes.
+
+**Metrics (90-day backtest, sma_crossover, SPY/QQQ/BTC-USD, 1h):** identical by construction (the orchestrator is not on the backtest path): sharpe=0.178, mdd=-3.57%, n_trades=2903. The change from 2026-11-08's 0.015 is due to the moving 90-day window, not to any code change. `pytest -q` is green (214 passed, one new).
+
+**Learned today (from the brief and the journals):**
+- **`hedger serve` still runs the 2026-10-24 tree** (same PID since 2026-10-24 06:34). PRs #16, #18, #19 and #20 are therefore still not live, and neither is this change. The brief again shows all-time `counts.orders` (281) and May orders as `unfilled_orders`. All 3 `position_drifts` are the bot's own fills, to the last digit (SPY sell 0.147402407; QQQ sells 0.329508898 and 0.089363697).
+- 52 signals (all `sma_crossover`, all scoring 1.0), 30 decisions, 3 fills: one SPY trim and two QQQ trims back to the 10% weight as equities rose. The 22 BTC signals produced no fills because the rebalances fell under the dust threshold. No losing trades as such; the cash change is rebalancing flow.
+- BTC `avg_price` is still negative (Alpaca's cost-basis artefact).
+
+**Watch tomorrow:**
+- Once `serve` is restarted on current code, `reflections.jsonl` gains one row per cycle whatever the outcome. A row with `status` other than `ok` means the cycle's work was discarded or never ran: read `journalctl -u hedger` around that time.
+
+**TODO (next cycles, in priority order):**
+1. Brief: sum `mall["fees"]` over the window and treat a BTC-buy drift residual matching a `CFEE` asset fee as explained (needs the restart first, for data).
+2. Brief: surface the last few `mall["reflections"]` rows with non-`ok` status, so a failed cycle shows up in the next brief.
+3. Brief: flag `avg_price < 0` positions.
+4. Consider making `JsonlStore.__setitem__` skip the append when the value is unchanged.
+5. Carried over: exit-on-flat (Question 5), gross-exposure cap (Question 3), rebalance band (Question 4).
+
+---
+
 ## 2026-11-08 — The hourly news refresh no longer re-appends known articles
 
 **Scope:** observation (data-integrity fix in the news journal). No strategy, sizer, broker or risk-middleware change; `news_context` reads the same keyed mapping as before.
