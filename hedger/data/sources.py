@@ -90,7 +90,10 @@ class AlpacaSource:
     """Alpaca historical bars via the official `alpaca-py` SDK.
 
     Falls back to ``ALPACA_API_KEY`` / ``ALPACA_SECRET_KEY`` env vars when
-    no keys are passed. Crypto historical data does not require keys.
+    no keys are passed. Crypto historical data does not require keys, but
+    when keys are available the crypto client is authenticated too:
+    unauthenticated crypto requests share Alpaca's per-IP rate limit, which
+    returned "too many requests" on ~1 in 6 hourly BTC fetches (2026-11-15).
 
     >>> AlpacaSource.name
     'alpaca'
@@ -108,12 +111,14 @@ class AlpacaSource:
             raise ImportError("`pip install alpaca-py` to use AlpacaSource.") from e
         self.api_key = api_key or os.environ.get("ALPACA_API_KEY")
         self.secret = secret or os.environ.get("ALPACA_SECRET_KEY")
-        self._stock = (
-            StockHistoricalDataClient(self.api_key, self.secret)
-            if self.api_key and self.secret
-            else None
+        has_keys = bool(self.api_key and self.secret)
+        self._stock = StockHistoricalDataClient(self.api_key, self.secret) if has_keys else None
+        # Keys are optional for crypto data; with them, the account's rate limit applies.
+        self._crypto = (
+            CryptoHistoricalDataClient(self.api_key, self.secret)
+            if has_keys
+            else CryptoHistoricalDataClient()
         )
-        self._crypto = CryptoHistoricalDataClient()  # no key needed for crypto data
 
     @staticmethod
     def _timeframe(timeframe: str):
