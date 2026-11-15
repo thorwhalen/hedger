@@ -155,6 +155,45 @@ def test_make_source_default_is_alpaca():
     assert isinstance(src, AlpacaSource)
 
 
+def _patch_alpaca_data_clients(monkeypatch):
+    """Replace the alpaca-py historical clients with recorders of their init args."""
+    calls = {}
+
+    def recorder(name):
+        def make(*args, **kwargs):
+            calls[name] = (args, kwargs)
+            return MagicMock()
+        return make
+
+    fake = SimpleNamespace(
+        CryptoHistoricalDataClient=recorder("crypto"),
+        StockHistoricalDataClient=recorder("stock"),
+    )
+    monkeypatch.setitem(__import__("sys").modules, "alpaca.data.historical", fake)
+    return calls
+
+
+def test_alpaca_source_authenticates_crypto_client_when_keys_present(
+    fake_alpaca_env, monkeypatch
+):
+    """Unauthenticated crypto requests share a per-IP rate limit (429s live)."""
+    from hedger.data.sources import AlpacaSource
+    calls = _patch_alpaca_data_clients(monkeypatch)
+    AlpacaSource()
+    assert calls["crypto"][0] == ("fake-key", "fake-secret")
+    assert calls["stock"][0] == ("fake-key", "fake-secret")
+
+
+def test_alpaca_source_crypto_client_works_without_keys(monkeypatch):
+    from hedger.data.sources import AlpacaSource
+    monkeypatch.delenv("ALPACA_API_KEY", raising=False)
+    monkeypatch.delenv("ALPACA_SECRET_KEY", raising=False)
+    calls = _patch_alpaca_data_clients(monkeypatch)
+    src = AlpacaSource()
+    assert calls["crypto"] == ((), {})
+    assert "stock" not in calls and src._stock is None
+
+
 def test_make_source_yfinance_still_works():
     from hedger.data.sources import YFinanceSource, make_source
     assert isinstance(make_source("yfinance"), YFinanceSource)

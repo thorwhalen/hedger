@@ -6,6 +6,35 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-11-15 — The crypto data client authenticates, so BTC fetches stop hitting the shared rate limit
+
+**Scope:** observation (data-source reliability). No strategy, sizer, broker or risk-middleware change. The same bars are fetched, through an authenticated client.
+
+**Changed:** `hedger/data/sources.py` (`AlpacaSource` passes the API keys to `CryptoHistoricalDataClient` when it has them, and still builds an unauthenticated client when it has none), `tests/test_alpaca_unit.py` (two tests: with keys, both data clients get them; without keys, the crypto client is built bare and there is no stock client). The keys test fails on the old code.
+
+**Why:** A surprise in today's brief: 20 BTC signals in a 24-hour window, not 24. The journal shows `fetch_failed` for `BTC/USD` with `{"message": "too many requests."}` at 21:23 (Nov 14), and at 02:23, 10:23 and 20:23 (Nov 15), plus once on each of Nov 11 and 12. It was always BTC and never SPY/QQQ. The crypto client was built with no keys, so it shares Alpaca's per-IP limit for anonymous callers. The stock client authenticates and has never failed. Each failure lands 11s after the tick starts, which is alpaca-py's built-in 3 retries 3s apart running out. A failed fetch leaves `bars[s] = []`, so the strategy silently skips BTC for that hour. That costs nothing today, but it would skip a down-cross exit if Question 5 is ever answered with (a) or (c). Smoke test (read-only, paper keys): the authenticated client returns current BTC/USD hourly bars.
+
+**Metrics (90-day backtest, sma_crossover, SPY/QQQ/BTC-USD, 1h, alpaca source):** identical before and after, as expected: sharpe=-0.142, mdd=-4.61%, n_trades=2915, final NAV 98,801. Down from 2026-11-11's 0.178 because the 90-day window moved into the current down-cross, not because of any code change. `pytest -q` green (216 passed, two new).
+
+**Learned today (from the brief and the journals):**
+- **`hedger serve` was restarted on 2026-11-14 06:23**, so PRs #16, #18, #19, #20 and #21 are now live. The brief windows orders correctly (`counts.orders` 0, `unfilled_orders` empty, `position_drifts` empty), and `fees.jsonl` exists (last row 2026-11-14 08:23).
+- **0 decisions because every signal is flat.** SPY and QQQ crossed down on the 2026-11-14T00:00 bar, and BTC has scored 0.0 all window (fast 64,898 < slow 65,801 at 21:00). This is Question 5 in action: the bot holds about $10k each of SPY, QQQ and BTC against a flat signal, and NAV is 99,722 (QQQ avg 709 vs fast MA 683). No losing *trades*, but an unrealised loss the strategy's documented "flat" would have avoided. Owner decision still pending; no behaviour change made.
+- BTC `avg_price` is still negative (-583,701, Alpaca's cost-basis artefact).
+
+**Watch tomorrow:**
+- Needs a `serve` restart to take effect. After that, `fetch_failed` with "too many requests" for `BTC/USD` should disappear, and the brief should show one BTC signal per hourly tick (24 a day).
+- If 429s persist even when authenticated, something else on the host is spending the account's data quota: look for other Alpaca clients before blaming hedger.
+
+**TODO (next cycles, in priority order):**
+1. Brief: sum `mall["fees"]` over the window and treat a BTC-buy drift residual matching a `CFEE` asset fee as explained (data now exists).
+2. Brief: surface the last few non-`ok` `mall["reflections"]` rows.
+3. Brief: count `fetch_failed` per symbol, or flag symbols with fewer signals than ticks, so a missing hour is visible without reading the journal.
+4. Brief: flag `avg_price < 0` positions.
+5. Consider making `JsonlStore.__setitem__` skip the append when the value is unchanged.
+6. Carried over: exit-on-flat (Question 5, now costing money while all three symbols are flat), gross-exposure cap (Question 3), rebalance band (Question 4).
+
+---
+
 ## 2026-11-11 — Every reflection outcome is recorded, not only the passing ones
 
 **Scope:** observation (reflection orchestrator). No strategy, sizer, broker or risk-middleware change; nothing on the trading path reads `mall["reflections"]`.
