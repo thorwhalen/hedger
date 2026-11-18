@@ -314,6 +314,42 @@ def test_seeded_restart_does_not_rejournal_last_fill(fake_alpaca_env, monkeypatc
     assert list(broker.fills()) == []
 
 
+def test_streamed_partial_fill_does_not_swallow_the_final_fill(fake_alpaca_env, monkeypatch):
+    """Regression: a 0.0145 BTC buy (2026-11-16) was journalled as 0.00015.
+
+    The stream's ``partial_fill`` event marked the order seen, so its ``fill``
+    event (cumulative qty) arriving by the next drain was deduped away, and the
+    shortfall showed up as unexplained position drift.
+    """
+    from datetime import datetime, timezone
+
+    from hedger.base import Fill
+    from hedger.live.runner import _journalled_fill_ids
+
+    btc = Symbol("BTC/USD", AssetClass.CRYPTO)
+    ts = datetime(2026, 11, 16, 21, 23, 50, tzinfo=timezone.utc)
+
+    def streamed(qty, event):
+        return Fill(order_id="5776ae1f", symbol=btc, side=Side.BUY, qty=qty,
+                    price=65176.83, fee=0.0, ts=ts, venue="alpaca", meta={"event": event})
+
+    broker, _ = _make_broker_with_fake_client(monkeypatch)
+    journal = {}  # same keying as Runner.tick: (run_id, order_id), last write wins
+    broker._streamed_fills.append(streamed(0.000151122, "partial_fill"))
+    for f in broker.fills():
+        journal[("run", f.order_id)] = {"order_id": f.order_id, "qty": f.qty, "meta": f.meta}
+    assert _journalled_fill_ids({"fills": journal}) == set()  # not final yet
+
+    broker._streamed_fills.append(streamed(0.014484499, "fill"))
+    for f in broker.fills():
+        journal[("run", f.order_id)] = {"order_id": f.order_id, "qty": f.qty, "meta": f.meta}
+    assert journal[("run", "5776ae1f")]["qty"] == pytest.approx(0.014484499)
+    assert _journalled_fill_ids({"fills": journal}) == {"5776ae1f"}
+
+    broker._streamed_fills.append(streamed(0.014484499, "fill"))  # duplicate event
+    assert list(broker.fills()) == []
+
+
 # -- crypto symbol normalisation (regression for the 2026-05-09 BTC over-buy) --
 
 

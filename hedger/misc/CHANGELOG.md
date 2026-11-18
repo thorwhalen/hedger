@@ -6,6 +6,31 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-11-18 — A streamed partial fill no longer swallows the order's final fill
+
+**Scope:** observation (fill-journal correctness). No strategy, sizer or risk-middleware change. Orders are submitted exactly as before; only what gets journalled after they fill changes.
+
+**Changed:** `hedger/execution/brokers.py` (new `is_partial_fill`, with doctests; the stream drain in `AlpacaBroker.fills()` no longer adds an order to `_seen_fills` on a `partial_fill` event), `hedger/live/runner.py` (`_journalled_fill_ids` skips partial rows, so after a restart the order's completion can still be journalled), `tests/test_alpaca_unit.py` (one regression test, which fails on the old code).
+
+**Why:** A surprise in the journals: a `position_drift` warning on 2026-11-16 21:23 for BTC/USD with `unexplained_qty` 0.0143. The tick submitted a market buy of 0.014484499 BTC. Alpaca reports that order `FILLED` for the full qty, 2 ms after a first partial fill (read-only check). `fills.jsonl` holds one row for the order: 0.000151122, `meta.event = "partial_fill"`. Streamed fills carry the order's *cumulative* `filled_qty`. The drain marked the order seen on the partial event, so the `fill` event that followed, which carried the full qty, was deduped away. The shortfall then counted as unexplained drift, and 99% of the buy was missing from fill-based P&L, tax records and the brief's notional. The fix leaves the journal key `(run_id, order_id)` unchanged, so the final event overwrites the partial row with the cumulative qty and average price.
+
+**Metrics (90-day backtest, sma_crossover, SPY/QQQ/BTC-USD, 1h, alpaca source):** identical before and after, as expected, because the backtest uses `PaperBroker`: sharpe=-0.381, mdd=-5.15%, n_trades=2841. That is lower than on 2026-11-15 (-0.142) because the window has moved further into the down-cross. `pytest -q` green (216 passed, 1 skipped).
+
+**Learned today (from the brief and the journals):**
+- **`hedger serve` has not been restarted since 2026-11-14 06:23**, so PR #22 (authenticated crypto data client) is not live yet. One more `fetch_failed` "too many requests" for BTC/USD at 05:23. Combined with the window boundary, that explains 22 BTC signals instead of 24.
+- **0 news since 2026-11-16 20:23 is upstream, not a hedger bug.** Probed read-only: Alpaca's news API returns no articles tagged SPY or QQQ over the last 5 days, while NVDA gets current ones, and none of the latest 50 articles in the last 24 hours carries either tag. `refresh_news` is working. No enabled strategy reads news (`llm_news` is not enabled), so nothing is lost today. If `llm_news` is ever enabled on an ETF-only universe, it will see nothing.
+- 0 decisions: every signal scores 0.0 (all three symbols are below their slow MA). That is Question 5 again: positions are held against a flat signal.
+
+**Watch tomorrow:**
+- Live only after a `serve` restart, which also activates PR #22. A BTC buy that fills in parts should be journalled once, with the order's full qty. `position_drift` on such a tick should show `unexplained_qty` ≈ 0 apart from the `CFEE` asset fee.
+
+**TODO (next cycles, in priority order):**
+1. `_fill_qty_by_symbol` dedupes by `order_id`, first row wins. If a restart falls between a partial and a final fill, the two rows have different run ids, and the partial one could win. Prefer the non-partial row, or the larger qty.
+2. Optional owner repair: the 2026-11-16 order `5776ae1f…` is under-journalled by 0.014333377 BTC. One overwrite of that row with the broker's figures would fix it, ideally with `serve` stopped.
+3. Carried over: brief fee sum (`mall["fees"]`), non-`ok` reflections in the brief, `fetch_failed` per symbol in the brief, flag `avg_price < 0`, `JsonlStore` skip-unchanged, and Questions 3/4/5.
+
+---
+
 ## 2026-11-15 — The crypto data client authenticates, so BTC fetches stop hitting the shared rate limit
 
 **Scope:** observation (data-source reliability). No strategy, sizer, broker or risk-middleware change. The same bars are fetched, through an authenticated client.

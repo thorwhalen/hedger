@@ -48,7 +48,7 @@ from hedger.data.stores import (
     positions_to_snapshot,
     signal_to_dict,
 )
-from hedger.execution.brokers import AlpacaBroker, make_broker
+from hedger.execution.brokers import AlpacaBroker, is_partial_fill, make_broker
 from hedger.execution.risk import default_risk_middleware
 from hedger.execution.sizing import equal_weight_sizer
 from hedger.notify import LogNotifier, Notifier, make_notifier
@@ -85,10 +85,16 @@ def _latest_fill_ts(mall: Mapping) -> "datetime | None":
 
 
 def _journalled_fill_ids(mall: Mapping) -> set[str]:
-    """Return the order ids already recorded in mall["fills"].
+    """Return the ids of orders whose final fill is recorded in mall["fills"].
+
+    A row journalled from a ``partial_fill`` event does not count: after a
+    restart the order's completion must still be picked up.
 
     >>> _journalled_fill_ids({"fills": {("run", "a"): {"order_id": "a"}, ("r", "x"): {}}})
     {'a'}
+    >>> _journalled_fill_ids({"fills": {("r", "p"): {"order_id": "p",
+    ...                                              "meta": {"event": "partial_fill"}}}})
+    set()
     >>> _journalled_fill_ids({})
     set()
     """
@@ -96,7 +102,7 @@ def _journalled_fill_ids(mall: Mapping) -> set[str]:
         return {
             str(v["order_id"])
             for v in mall["fills"].values()
-            if isinstance(v, dict) and v.get("order_id")
+            if isinstance(v, dict) and v.get("order_id") and not is_partial_fill(v)
         }
     except Exception:
         return set()
