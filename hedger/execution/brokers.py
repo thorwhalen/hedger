@@ -199,6 +199,24 @@ def _symbol_from_alpaca(raw_symbol: str, raw_asset_class: str) -> Symbol:
     return Symbol(ticker=ticker, asset_class=asset_class)
 
 
+def is_partial_fill(fill: "Fill | Mapping[str, Any]") -> bool:
+    """True when a Fill (or its journalled dict) came from a ``partial_fill`` event.
+
+    Streamed fills carry the order's *cumulative* filled qty at event time, so
+    a partial one is a snapshot that the order's later ``fill`` event
+    supersedes. Dedupe must not treat the order as done on a partial.
+
+    >>> is_partial_fill({"order_id": "a", "meta": {"event": "partial_fill"}})
+    True
+    >>> is_partial_fill({"order_id": "a", "meta": {"event": "fill"}})
+    False
+    >>> is_partial_fill({"order_id": "a"})  # polled closed orders have no event
+    False
+    """
+    meta = fill.get("meta") if isinstance(fill, Mapping) else getattr(fill, "meta", None)
+    return isinstance(meta, Mapping) and meta.get("event") == "partial_fill"
+
+
 _FEE_ACTIVITY_TYPES = ("CFEE", "FEE")  # crypto pair fee; regulatory (CAT/REG/TAF)
 
 
@@ -386,7 +404,10 @@ class AlpacaBroker:
                 f = self._streamed_fills.popleft()
                 if f.order_id in self._seen_fills:
                     continue
-                self._seen_fills.add(f.order_id)
+                # A partial fill must not close the order: its later "fill"
+                # event (cumulative qty) would otherwise be deduped away.
+                if not is_partial_fill(f):
+                    self._seen_fills.add(f.order_id)
                 if f.ts and (self._fill_watermark is None or f.ts > self._fill_watermark):
                     self._fill_watermark = f.ts
                 yield f
