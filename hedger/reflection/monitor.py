@@ -269,7 +269,8 @@ def daily_brief(
         if isinstance(v, dict) and _in_window(v.get("ts"), start, end)
     ]
     fees = [
-        v for v in _safe_values(mall, "fees")
+        v
+        for v in _safe_values(mall, "fees")
         if isinstance(v, dict) and _in_window(v.get("ts"), start, end)
     ]
     latest_snapshot = _latest_positions_snapshot(mall)
