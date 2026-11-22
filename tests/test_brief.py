@@ -160,3 +160,30 @@ def test_brief_counts_a_twice_journalled_fill_once():
     assert b["counts"]["fills"] == 1
     assert b["by_symbol"]["default:BTC/USD"]["fills"] == 1
     assert b["approx_realized_cash_change"] == -800.0
+
+
+def test_brief_labels_in_kind_crypto_fee_drift_and_sums_fees():
+    """A BTC-buy residual of exactly the 0.25% fee is labelled, not flagged.
+
+    Shape of every drift on 2026-11-22: a buy, then a residual of -0.25%.
+    """
+    m = mall(tempfile.mkdtemp())
+    m["drifts"][(_now_iso(2), "tick:fee", "0")] = {
+        "symbol": "default:BTC/USD", "prev_qty": 0.1, "broker_qty": 0.109975,
+        "explained_qty": 0.01, "unexplained_qty": -2.5e-05,
+        "ts": _now_iso(2), "label": "tick:fee",
+    }
+    m["drifts"][(_now_iso(1), "tick:real", "0")] = {
+        "symbol": "default:SPY", "prev_qty": 10.0, "broker_qty": 11.0,
+        "explained_qty": 0.0, "unexplained_qty": 1.0,
+        "ts": _now_iso(1), "label": "tick:real",
+    }
+    m["fees"]["a1"] = {"id": "a1", "ts": _now_iso(1), "symbol": "default:BTC/USD",
+                       "qty": -3e-05, "usd": -1.8}
+    m["fees"]["a2"] = {"id": "a2", "ts": _now_iso(1), "symbol": None, "qty": 0.0, "usd": -0.01}
+    m["fees"]["old"] = {"id": "old", "ts": _now_iso(48), "symbol": None, "qty": 0.0, "usd": -9.0}
+    b = daily_brief(m)
+    causes = {d["symbol"]: d["cause"] for d in b["position_drifts"]}
+    assert causes == {"default:BTC/USD": "in_kind_fee", "default:SPY": "unexplained"}
+    assert b["n_unexplained_drifts"] == 1
+    assert b["fees"] == {"n": 2, "usd": -1.81, "asset_qty": {"default:BTC/USD": -3e-05}}

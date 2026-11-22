@@ -6,6 +6,33 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-11-22 — The brief labels drift caused by Alpaca's in-kind crypto fee, and totals journalled fees
+
+**Scope:** observation (reflection brief). No strategy, sizer, broker or risk-middleware change; nothing on the trading path reads the brief.
+
+**Changed:** `hedger/reflection/monitor.py` (new `_label_drift` and `_fee_summary`, with doctests; each `position_drifts` row gains `cause` (`"in_kind_fee"` or `"unexplained"`) and, for buys, `implied_fee_rate`; new top-level `n_unexplained_drifts` and `fees` (`n`, signed `usd`, in-kind `asset_qty` by symbol) for the window; `daily_brief` gains the keyword-only `fee_rate` (default 0.0025) and `fee_rate_rel_tol` (default 5%)), `tests/test_brief.py` (one test: a buy residual of -0.25% is labelled as the fee, a real drift stays unexplained, and only in-window fees are totalled). The test fails on the old code; the existing brief tests pass unchanged.
+
+**Why:** TODO 1, carried since 2026-11-04. Today's brief lists three BTC `position_drifts`, each after a buy, and each with `unexplained_qty / explained_qty` = -0.2500, -0.2500 and -0.2501%. That is Alpaca's crypto fee, taken in the asset, and nothing else. Every session had to recompute that ratio by hand to rule out a real discrepancy. The planned fix was to match each residual to a `CFEE` row in `mall["fees"]`. A read-only check of the paper account ruled that out: Alpaca has posted **no `CFEE` activity since 2026-11-16**, though every BTC buy since then has been reduced by 0.25%. Earlier activities were also posted with up to a two-day lag. A match by activity would therefore miss on the day it is needed. So the label compares the implied rate with the fee rate, and the activity total is reported next to it as a separate field that lags.
+
+**Metrics (90-day backtest, sma_crossover, SPY/QQQ/BTC-USD, 1h, alpaca source):** sharpe=-0.555, mdd=-7.14%, n_trades=2731. The brief is not on the backtest path, so the change cannot affect these numbers and the "before" run was not repeated. The drop from 2026-11-18's -0.381 is the moving window. `pytest -q` green (217 passed, 1 skipped). Replaying `daily_brief` on today's real journal labels all three drifts `in_kind_fee`, `n_unexplained_drifts` = 0, `fees.n` = 0 (nothing posted yet).
+
+**Learned today (from the brief and the journals):**
+- **`hedger serve` was restarted on 2026-11-19 11:59**, so PRs #22 and #23 are live. No `fetch_failed` in the window (the 429s are gone). All six BTC fills match the broker's position to the last digit apart from the fee, so the partial-fill fix holds. 23 signals instead of 24 is the window edge, not a missed tick.
+- BTC scored 1.0 all day. With the price moving about 4%, the hourly rebalance back to the 10% cap produced 3 buys and 3 sells. Each round trip pays the 0.25% fee twice. That is Question 4 (rebalance band) costing money on crypto, not only on equities. SPY/QQQ still score 0.0 and are held (Question 5).
+- No news in the window, as on 2026-11-18 (upstream: Alpaca carries no SPY/QQQ-tagged articles).
+
+**Watch tomorrow:**
+- Takes effect at the next brief; it needs no `serve` restart, because the orchestrator builds the brief. `n_unexplained_drifts` should be 0 on a normal day. Any drift labelled `unexplained` is real and worth a look.
+- Whether Alpaca ever posts the `CFEE` activities for the BTC buys since 2026-11-19. If `fees.asset_qty` stays empty for a week, the fee journal can't be relied on for crypto cost, and fill rows should derive the in-kind fee from the reconcile residual instead.
+
+**TODO (next cycles, in priority order):**
+1. `_fill_qty_by_symbol` dedupes by `order_id`, first row wins (carried from 2026-11-18): prefer the non-partial row.
+2. Brief: surface the last few non-`ok` `mall["reflections"]` rows; count `fetch_failed` per symbol; flag `avg_price < 0`.
+3. Consider `JsonlStore.__setitem__` skip-unchanged.
+4. Carried over: Questions 3, 4 (now visible as BTC fee churn) and 5.
+
+---
+
 ## 2026-11-18 — A streamed partial fill no longer swallows the order's final fill
 
 **Scope:** observation (fill-journal correctness). No strategy, sizer or risk-middleware change. Orders are submitted exactly as before; only what gets journalled after they fill changes.

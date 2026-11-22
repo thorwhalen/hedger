@@ -18,7 +18,11 @@ orchestrator and the reflection-cycle skill):
     },
     "approx_realized_cash_change": float,
     "unfilled_orders":  [{...}],   # in-window orders with no fill in window
-    "position_drifts":  [{...}],   # recent reconciliation drifts
+    "position_drifts":  [{...}],   # recent reconciliation drifts, each
+                                   # with "cause": "in_kind_fee" | "unexplained"
+    "n_unexplained_drifts": int,   # drifts NOT explained by the crypto fee
+    "fees": {"n": int, "usd": float, "asset_qty": {sym: float}},  # journalled
+                                   # fee activities in window (posted late)
     "latest_positions": [...],     # last positions snapshot, if any
     "fills_sample":     [...],
     "decisions_sample": [...],
@@ -108,6 +112,62 @@ def _dedupe_by_order_id(fills: list[dict]) -> list[dict]:
     return out
 
 
+ALPACA_CRYPTO_FEE_RATE = 0.0025  # taker fee Alpaca takes in the asset on crypto buys
+FEE_RATE_REL_TOL = 0.05  # how close the implied rate must be to count as the fee
+
+
+def _label_drift(
+    drift: Mapping, *, fee_rate: float = ALPACA_CRYPTO_FEE_RATE, rel_tol: float = FEE_RATE_REL_TOL
+) -> dict:
+    """Return a copy of a drift row labelled with its likely ``cause``.
+
+    Alpaca takes its crypto fee *in the asset* on buys, so after every BTC buy
+    the position is ``explained_qty * (1 - fee_rate)`` and ``reconcile`` logs a
+    small negative residual. The fee activity (``CFEE``) is posted days later,
+    if at all, so it cannot be matched on the day. Instead the residual is
+    compared with the fee rate: ``cause`` is ``"in_kind_fee"`` when
+    ``-unexplained / explained`` is within ``rel_tol`` of ``fee_rate``, else
+    ``"unexplained"``. ``implied_fee_rate`` is added whenever it is defined.
+
+    >>> d = _label_drift({"explained_qty": 0.01, "unexplained_qty": -2.5e-05})
+    >>> d["cause"], round(d["implied_fee_rate"], 5)
+    ('in_kind_fee', 0.0025)
+    >>> _label_drift({"explained_qty": 0.01, "unexplained_qty": -0.001})["cause"]
+    'unexplained'
+    >>> _label_drift({"prev_qty": 10.0, "broker_qty": 11.0})["cause"]
+    'unexplained'
+    """
+    out = dict(drift)
+    explained = float(drift.get("explained_qty") or 0.0)
+    unexplained = drift.get("unexplained_qty")
+    out["cause"] = "unexplained"
+    if explained > 0 and unexplained is not None and float(unexplained) < 0:
+        implied = -float(unexplained) / explained
+        out["implied_fee_rate"] = implied
+        if abs(implied - fee_rate) <= rel_tol * fee_rate:
+            out["cause"] = "in_kind_fee"
+    return out
+
+
+def _fee_summary(fees: list[dict]) -> dict:
+    """Total the journalled fee activities of a window.
+
+    ``usd`` is the signed USD sum (negative = paid); ``asset_qty`` sums
+    in-kind fees by symbol. Note Alpaca posts ``CFEE`` activities late, so
+    this lags the drift labels by up to several days.
+
+    >>> _fee_summary([{"usd": -0.5, "symbol": "default:BTC/USD", "qty": -1e-05},
+    ...               {"usd": -0.01, "symbol": None, "qty": 0.0}])
+    {'n': 2, 'usd': -0.51, 'asset_qty': {'default:BTC/USD': -1e-05}}
+    """
+    asset_qty: dict[str, float] = {}
+    for f in fees:
+        if f.get("symbol") and f.get("qty"):
+            asset_qty[f["symbol"]] = asset_qty.get(f["symbol"], 0.0) + float(f["qty"])
+    usd = round(sum((float(f.get("usd") or 0.0) for f in fees), 0.0), 4)
+    return {"n": len(fees), "usd": usd, "asset_qty": asset_qty}
+
+
 def _safe_values(mall: Mapping, slot: str):
     """Return mall[slot].values() or () if the slot is missing/unreadable."""
     try:
@@ -123,11 +183,19 @@ def _safe_items(mall: Mapping, slot: str):
         return []
 
 
-def daily_brief(mall: Mapping, *, day: datetime | None = None) -> dict:
+def daily_brief(
+    mall: Mapping,
+    *,
+    day: datetime | None = None,
+    fee_rate: float = ALPACA_CRYPTO_FEE_RATE,
+    fee_rate_rel_tol: float = FEE_RATE_REL_TOL,
+) -> dict:
     """Compute a human-readable brief of the last 24h of activity.
 
     The agent uses this to decide what to investigate; the schema is
     intentionally minimal and stable so prompts don't break on changes.
+    ``fee_rate`` / ``fee_rate_rel_tol`` drive the drift ``cause`` labels
+    (see :func:`_label_drift`).
     """
     end = day or datetime.now(tz=timezone.utc)
     start = end - timedelta(hours=24)
@@ -196,8 +264,12 @@ def daily_brief(mall: Mapping, *, day: datetime | None = None) -> dict:
 
     # Recent reconciliation drift events (from mall["drifts"]).
     position_drifts: list[dict] = [
-        v
+        _label_drift(v, fee_rate=fee_rate, rel_tol=fee_rate_rel_tol)
         for v in _safe_values(mall, "drifts")
+        if isinstance(v, dict) and _in_window(v.get("ts"), start, end)
+    ]
+    fees = [
+        v for v in _safe_values(mall, "fees")
         if isinstance(v, dict) and _in_window(v.get("ts"), start, end)
     ]
     latest_snapshot = _latest_positions_snapshot(mall)
@@ -216,6 +288,8 @@ def daily_brief(mall: Mapping, *, day: datetime | None = None) -> dict:
         "approx_realized_cash_change": round(realized, 4),
         "unfilled_orders": unfilled[:20],
         "position_drifts": position_drifts[:20],
+        "n_unexplained_drifts": sum(d["cause"] == "unexplained" for d in position_drifts),
+        "fees": _fee_summary(fees),
         "latest_positions": (latest_snapshot or {}).get("positions", []),
         "latest_nav": (latest_snapshot or {}).get("nav"),
         "fills_sample": fills[:20],
