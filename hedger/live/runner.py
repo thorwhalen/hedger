@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Mapping
+from typing import Iterable, Iterator, Mapping
 
 from hedger.base import (
     AssetClass,
@@ -108,12 +108,41 @@ def _journalled_fill_ids(mall: Mapping) -> set[str]:
         return set()
 
 
+def _one_row_per_order(rows: Iterable) -> Iterator[dict]:
+    """Yield one journalled fill row per ``order_id``, preferring a final row.
+
+    A ``partial_fill`` row carries the qty filled so far; the order's final
+    row carries the whole qty. When a restart journals both (under different
+    run ids), the final row is the one that matches the broker's position,
+    whichever was written first. An order with only partial rows yields its
+    first one. Rows without an ``order_id`` are each kept as is.
+
+    >>> rows = [{"order_id": "a", "qty": 0.1, "meta": {"event": "partial_fill"}},
+    ...         {"order_id": "a", "qty": 1.0, "meta": {"event": "fill"}},
+    ...         {"order_id": "b", "qty": 0.2, "meta": {"event": "partial_fill"}},
+    ...         {"order_id": "b", "qty": 0.3, "meta": {"event": "partial_fill"}},
+    ...         "not a row"]
+    >>> [(r["order_id"], r["qty"]) for r in _one_row_per_order(rows)]
+    [('a', 1.0), ('b', 0.2)]
+    """
+    chosen: dict = {}
+    for i, v in enumerate(rows):
+        if not isinstance(v, dict):
+            continue
+        key = v.get("order_id") or ("__no_order_id__", i)
+        prev = chosen.get(key)
+        if prev is None or (is_partial_fill(prev) and not is_partial_fill(v)):
+            chosen[key] = v
+    yield from chosen.values()
+
+
 def _fill_qty_by_symbol(
     mall: Mapping, *, after: "datetime | None", until: datetime
 ) -> dict[str, float]:
     """Signed qty of journalled fills with ``after < ts <= until``, by symbol.
 
-    Fills are deduped by ``order_id`` (a restart could journal one twice).
+    Fills are deduped by ``order_id`` (a restart could journal one twice);
+    see :func:`_one_row_per_order` for which row wins.
     ``after=None`` means no lower bound.
 
     >>> from datetime import datetime as dt
@@ -131,14 +160,11 @@ def _fill_qty_by_symbol(
     {'s': 1.5}
     """
     out: dict[str, float] = {}
-    seen: set[str] = set()
     try:
         rows = list(mall["fills"].values())
     except Exception:
         return out
-    for v in rows:
-        if not isinstance(v, dict) or v.get("order_id") in seen:
-            continue
+    for v in _one_row_per_order(rows):
         try:
             ts = datetime.fromisoformat(v["ts"])
             sign = 1.0 if v["side"] == "buy" else -1.0
@@ -147,7 +173,6 @@ def _fill_qty_by_symbol(
             continue
         if (after is not None and ts <= after) or ts > until:
             continue
-        seen.add(v.get("order_id"))
         out[v["symbol"]] = out.get(v["symbol"], 0.0) + qty
     return out
 
