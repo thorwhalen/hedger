@@ -151,3 +151,16 @@ def test_reconcile_counts_each_fill_once():
     assert runner.reconcile(snapshot_label="t1")["n_drifts"] == 0
     # Next tick: nothing traded, the o1 fill must not be re-applied.
     assert runner.reconcile(snapshot_label="t2")["n_drifts"] == 0
+
+
+def test_reconcile_prefers_final_fill_over_earlier_partial():
+    """A restart that journals a partial row first must not hide the final qty."""
+    sym = Symbol("AAPL", AssetClass.EQUITY)
+    broker = _StaticBroker({sym: Position(symbol=sym, qty=10, avg_price=100)})
+    runner, m = _make_runner(broker)
+    runner.reconcile(snapshot_label="t0")
+    _journal_fill(m, run_id="r1", order_id="o1", side="buy", qty=0.5)
+    m["fills"][("r1", "o1")] = {**m["fills"][("r1", "o1")], "meta": {"event": "partial_fill"}}
+    _journal_fill(m, run_id="r2", order_id="o1", side="buy", qty=5)  # the final fill
+    broker._positions[sym] = Position(symbol=sym, qty=15, avg_price=100)
+    assert runner.reconcile(snapshot_label="t1")["n_drifts"] == 0

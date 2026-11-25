@@ -6,6 +6,34 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ---
 
+## 2026-11-25 — Reconcile counts an order's final fill even when a partial row was journalled first
+
+**Scope:** observation (fill-journal accounting in `reconcile`). No strategy, sizer, broker or risk-middleware change. Orders are submitted exactly as before.
+
+**Changed:** `hedger/live/runner.py` (new `_one_row_per_order`, with a doctest: one journalled fill row per `order_id`, and a final row replaces an earlier `partial_fill` row; `_fill_qty_by_symbol` uses it instead of first-row-wins. Rows without an `order_id` are no longer collapsed into one.) `tests/test_reconcile.py` (one test: a partial row journalled under one run id, then the final row under another, now gives no drift; it fails on the old code with a false 4.5 drift).
+
+**Why:** TODO 1, carried since 2026-11-18. Since PR #23 the live path no longer drops a final fill. But a restart between an order's `partial_fill` and its `fill` journals both rows under different run ids. The old dedupe kept whichever row came first, so it netted out only the partial qty and reported the rest as unexplained drift.
+
+**Metrics (90-day backtest, sma_crossover, SPY/QQQ/BTC-USD, 1h, alpaca source):** sharpe=-0.451, mdd=-7.14%, n_trades=2614. Reconcile is not on the backtest path, so the numbers are identical by construction and the "before" run was not repeated. The change from -0.555 on 2026-11-22 comes from the moving window. `pytest -q` green.
+
+**Learned today (from the brief and the journals):**
+- **The brief is built inside `serve`**, which has run since 2026-11-19, so PR #24's `cause`, `n_unexplained_drifts` and `fees` fields are missing from today's brief. The 2026-11-22 note "needs no serve restart" was wrong: brief changes need a restart too.
+- All three symbols turned flat: BTC (fast MA below slow) all day, QQQ from 12:00 and SPY from 17:00. All three are still held because a 0.0 score yields no Decision (Question 5). The window's only fill was a SPY buy at 15:00, a rebalance back to 10% two hours before SPY flipped flat. There were no losing round trips, but the positions are now unrealised losses that the strategy's documented "flat" would have closed.
+- No drifts and no news in the window (no news is upstream, as before).
+- While equities are closed, each hourly tick journals the last bar's (00:00) signal and decision again: 10 identical copies each overnight. This is journal noise only. The brief dedupes by key, and no orders follow because the market is closed.
+
+**Watch tomorrow:**
+- Needs a `serve` restart to take effect, together with PR #24. After the restart, the brief should carry `n_unexplained_drifts` and `fees`.
+- If a partial and a final row for one order ever appear together, reconcile should show no drift for it.
+
+**TODO (next cycles, in priority order):**
+1. Brief: surface the last few non-`ok` `mall["reflections"]` rows; count `fetch_failed` per symbol; flag `avg_price < 0`.
+2. Runner: skip journalling a signal or decision whose bar `ts` was already journalled (stale bar while the market is closed).
+3. Consider `JsonlStore.__setitem__` skip-unchanged.
+4. Carried over: Questions 3, 4 and 5 (Question 5 now covers all three held positions).
+
+---
+
 ## 2026-11-22 — The brief labels drift caused by Alpaca's in-kind crypto fee, and totals journalled fees
 
 **Scope:** observation (reflection brief). No strategy, sizer, broker or risk-middleware change; nothing on the trading path reads the brief.
